@@ -23,6 +23,7 @@ import type {
   AuthorizationParams,
 } from "@modelcontextprotocol/sdk/server/auth/provider.js";
 import { mcpAuthRouter } from "@modelcontextprotocol/sdk/server/auth/router.js";
+import { metadataHandler } from "@modelcontextprotocol/sdk/server/auth/handlers/metadata.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import type {
   OAuthClientInformationFull,
@@ -560,12 +561,28 @@ export function createOAuthApp(options: CreateOAuthAppOptions): CreateOAuthAppRe
   // Apply a separate token rate limit before the SDK router handles /token
   app.post("/token", tokenLimiter);
 
+  // RFC 9728 puts the protected-resource document at the path-suffixed URL
+  // derived from the resource — /.well-known/oauth-protected-resource/mcp.
+  // The SDK's handler matches its mount path exactly, so the root path needs
+  // its own mount for clients that only probe there.
+  const resourceServerUrl = new URL("/mcp", publicUrl);
+  app.use(
+    "/.well-known/oauth-protected-resource",
+    metadataHandler({
+      resource: resourceServerUrl.href,
+      authorization_servers: [publicUrl.href],
+      scopes_supported: options.scopes,
+      resource_name: "WHOOP MCP",
+    })
+  );
+
   // SDK auth router: handles /authorize (POST forwarded), /token, /register,
   // metadata endpoints. Disable its own rate limiting since we set our own.
   app.use(
     mcpAuthRouter({
       provider,
       issuerUrl: publicUrl,
+      resourceServerUrl,
       authorizationOptions: { rateLimit: false },
       tokenOptions: { rateLimit: false },
     })

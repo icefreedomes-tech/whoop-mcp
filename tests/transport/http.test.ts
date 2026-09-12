@@ -7,6 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import http from "node:http";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   safeTokenCompare,
   createHttpServer,
@@ -102,6 +103,7 @@ describe("HTTP Server", () => {
   let cleanup: (() => Promise<void>) | null = null;
 
   const defaultOptions: HttpServerOptions = {
+    createMcpServer: () => new McpServer({ name: "test-server", version: "0.0.0" }),
     authToken: "test-token-abc123",
     port: 0, // dynamic port
   };

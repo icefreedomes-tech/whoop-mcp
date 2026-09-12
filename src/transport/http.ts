@@ -11,12 +11,20 @@ import { createServer, type IncomingMessage, type ServerResponse, type Server } 
 import { createHash, timingSafeEqual } from "node:crypto";
 import { randomUUID } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export interface HttpServerOptions {
+  /**
+   * Factory producing a fresh MCP server for each new session. One server
+   * instance may only be connected to one transport, so a remote deployment
+   * serving several concurrent clients needs one of each per session.
+   */
+  createMcpServer: () => McpServer;
   /** Bearer token required for /mcp routes */
   authToken: string;
   /** Port to listen on (0 = dynamic, used in tests) */
@@ -63,7 +71,8 @@ export interface HttpServerOptions {
 
 export interface HttpServerResult {
   server: Server;
-  transport: StreamableHTTPServerTransport;
+  /** Number of live MCP sessions currently held open */
+  sessionCount: () => number;
   /** Gracefully close the server and drain connections */
   close: () => Promise<void>;
 }
@@ -185,6 +194,7 @@ function readBody(req: IncomingMessage): Promise<string> {
  */
 export async function createHttpServer(options: HttpServerOptions): Promise<HttpServerResult> {
   const {
+    createMcpServer,
     authToken,
     port,
     host = "0.0.0.0",
@@ -252,10 +262,48 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
     sseTimer.unref();
   }
 
-  // Create the SDK transport (stateful with session IDs)
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: () => randomUUID(),
-  });
+  // One transport and one MCP server per session. A single process-wide
+  // transport can only ever hold one session, so whichever client initializes
+  // first claims it and every other client is rejected — and claude.ai is two
+  // clients against the same deployment (its backend plus the browser).
+  const sessions = new Map<
+    string,
+    { transport: StreamableHTTPServerTransport; mcpServer: McpServer }
+  >();
+
+  function sessionIdOf(req: IncomingMessage): string | undefined {
+    const raw = req.headers["mcp-session-id"];
+    if (typeof raw === "string") return raw.length > 0 ? raw : undefined;
+    if (Array.isArray(raw)) return raw[0];
+    return undefined;
+  }
+
+  function sendJsonRpcError(res: ServerResponse, status: number, message: string): void {
+    sendJson(res, status, { jsonrpc: "2.0", error: { code: -32000, message }, id: null });
+  }
+
+  async function openSession(
+    req: IncomingMessage,
+    res: ServerResponse,
+    parsedBody: unknown
+  ): Promise<void> {
+    const mcpServer = createMcpServer();
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => randomUUID(),
+      onsessioninitialized: (sessionId: string) => {
+        sessions.set(sessionId, { transport, mcpServer });
+      },
+    });
+
+    transport.onclose = (): void => {
+      const sessionId = transport.sessionId;
+      if (sessionId) sessions.delete(sessionId);
+      void mcpServer.close().catch(() => {});
+    };
+
+    await mcpServer.connect(transport);
+    await transport.handleRequest(req, res, parsedBody);
+  }
 
   // Create HTTP server
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -350,9 +398,25 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
         }
       }
 
-      // Delegate to SDK transport
+      // Route to the session named by the header, or open one on initialize
       try {
-        await transport.handleRequest(req, res, parsedBody);
+        const sessionId = sessionIdOf(req);
+        if (sessionId) {
+          const session = sessions.get(sessionId);
+          if (!session) {
+            sendJsonRpcError(res, 400, "Unknown or expired MCP session.");
+            return;
+          }
+          await session.transport.handleRequest(req, res, parsedBody);
+        } else if (req.method === "POST" && isInitializeRequest(parsedBody)) {
+          await openSession(req, res, parsedBody);
+        } else {
+          sendJsonRpcError(
+            res,
+            400,
+            "Missing Mcp-Session-Id header. Send an initialize request first."
+          );
+        }
       } catch (error: unknown) {
         // If response hasn't been sent yet
         if (!res.headersSent) {
@@ -380,7 +444,10 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
       clearInterval(sseTimer);
       sseTimer = null;
     }
-    await transport.close();
+    for (const session of [...sessions.values()]) {
+      await session.transport.close().catch(() => {});
+    }
+    sessions.clear();
     await new Promise<void>((resolve, reject) => {
       server.close((err) => {
         if (err) reject(err);
@@ -389,5 +456,5 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
     });
   };
 
-  return { server, transport, close };
+  return { server, sessionCount: () => sessions.size, close };
 }

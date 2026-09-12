@@ -22,6 +22,7 @@ import { loadTokens, saveTokens } from "./auth/token-store.js";
 import { createWhoopClient } from "./api/client.js";
 import { MemoryCache } from "./cache/memory-cache.js";
 import { createWhoopServer } from "./server.js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { connectStdioTransport } from "./transport/stdio.js";
 import { createHttpServer, type HttpServerResult } from "./transport/http.js";
 import { createLogger, type LogLevel, type Logger } from "./logging/logger.js";
@@ -112,7 +113,11 @@ export async function main(): Promise<void> {
   // 2. Read WHOOP OAuth credentials (always required)
   const clientId = getRequiredEnv("WHOOP_CLIENT_ID");
   const clientSecret = getRequiredEnv("WHOOP_CLIENT_SECRET");
-  const oauthConfig: OAuthConfig = { clientId, clientSecret };
+  const oauthConfig: OAuthConfig = {
+    clientId,
+    clientSecret,
+    redirectUri: process.env.WHOOP_REDIRECT_URI,
+  };
 
   // 3. Authenticate with WHOOP — uses cached tokens, refreshes, or runs full flow
   console.error("Authenticating with WHOOP...");
@@ -145,16 +150,19 @@ export async function main(): Promise<void> {
 
   const client = createWhoopClient({ accessToken, onTokenRefresh, logger, cache });
 
-  // 5. Create the MCP server with all WHOOP tools and resources
+  // 5. Create the MCP server with all WHOOP tools and resources.
+  // An McpServer binds to exactly one transport, so HTTP builds one per
+  // session rather than sharing a single instance across every client.
   const disableResources = process.env.WHOOP_MCP_DISABLE_RESOURCES === "1";
-  const { server } = createWhoopServer(client, { disableResources, privacyMode });
+  const newMcpServer = (): McpServer =>
+    createWhoopServer(client, { disableResources, privacyMode }).server;
 
   // 6. Connect transports based on MCP_TRANSPORT mode
   const httpResults: HttpServerResult[] = [];
   let oauthCloseFn: (() => void) | null = null;
 
   if (transportMode === "stdio" || transportMode === "both") {
-    await connectStdioTransport(server);
+    await connectStdioTransport(newMcpServer());
   }
 
   if (transportMode === "http" || transportMode === "both") {
@@ -217,6 +225,7 @@ export async function main(): Promise<void> {
     }
 
     const httpResult = await createHttpServer({
+      createMcpServer: newMcpServer,
       authToken,
       port,
       host,
@@ -225,7 +234,6 @@ export async function main(): Promise<void> {
       healthCheck,
       oauthHandler,
     });
-    await server.connect(httpResult.transport);
     httpResults.push(httpResult);
 
     logger.info("http transport listening", {

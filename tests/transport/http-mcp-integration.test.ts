@@ -29,9 +29,12 @@ function makeMockWhoopClient(): WhoopClient {
 
 describe("HTTP transport — MCP integration", () => {
   it("enforces aggregate privacy and structured results over HTTP", async () => {
-    const { server } = createWhoopServer(analyticsClient(), { privacyMode: "aggregate" });
-    const http = await createHttpServer({ authToken: "privacy-test-token", port: 0 });
-    await server.connect(http.transport);
+    const http = await createHttpServer({
+      createMcpServer: () =>
+        createWhoopServer(analyticsClient(), { privacyMode: "aggregate" }).server,
+      authToken: "privacy-test-token",
+      port: 0,
+    });
     const address = http.server.address();
     if (!address || typeof address === "string") throw new Error("Missing port");
     const client = new Client({ name: "privacy-test", version: "1" });
@@ -51,7 +54,6 @@ describe("HTTP transport — MCP integration", () => {
       await expect(client.getPrompt({ name: "health_check" })).rejects.toThrow();
     } finally {
       await client.close();
-      await server.close();
       await http.close();
     }
   });
@@ -67,13 +69,12 @@ describe("HTTP transport — MCP integration", () => {
 
   it("lists tools, resources, and prompts over HTTP with bearer auth", async () => {
     const mockClient = makeMockWhoopClient();
-    const { server: mcpServer } = createWhoopServer(mockClient);
 
     const httpResult = await createHttpServer({
+      createMcpServer: () => createWhoopServer(mockClient).server,
       authToken: "test-bearer-token",
       port: 0,
     });
-    await mcpServer.connect(httpResult.transport);
 
     const addr = httpResult.server.address();
     if (!addr || typeof addr === "string") throw new Error("server has no port");
@@ -127,6 +128,7 @@ describe("HTTP transport — MCP integration", () => {
     });
 
     const httpResult = await createHttpServer({
+      createMcpServer: () => createWhoopServer(makeMockWhoopClient()).server,
       authToken: "test-bearer-token",
       port: 0,
       oauthHandler: oauth.app as unknown as Parameters<typeof createHttpServer>[0]["oauthHandler"],
@@ -142,5 +144,65 @@ describe("HTTP transport — MCP integration", () => {
     expect(r.status).toBe(200);
     const body = (await r.json()) as { issuer: string };
     expect(body.issuer).toMatch(/^https:\/\/example\.com\/?$/);
+  });
+
+  // Regression: a single process-wide transport served exactly one session, so
+  // whichever client initialized first claimed it and the next got a 400.
+  // claude.ai is two clients at once — its backend plus the browser.
+  it("serves two concurrent clients on separate sessions", async () => {
+    const httpResult = await createHttpServer({
+      createMcpServer: () => createWhoopServer(makeMockWhoopClient()).server,
+      authToken: "multi-session-token",
+      port: 0,
+      maxConnections: 10,
+    });
+
+    const addr = httpResult.server.address();
+    if (!addr || typeof addr === "string") throw new Error("server has no port");
+    const url = new URL(`http://127.0.0.1:${addr.port}/mcp`);
+    const auth = { requestInit: { headers: { Authorization: "Bearer multi-session-token" } } };
+
+    const first = new Client({ name: "client-one", version: "0.0.0" });
+    const second = new Client({ name: "client-two", version: "0.0.0" });
+
+    cleanup = async (): Promise<void> => {
+      await first.close().catch(() => {});
+      await second.close().catch(() => {});
+      await httpResult.close();
+    };
+
+    await first.connect(new StreamableHTTPClientTransport(url, auth));
+    await second.connect(new StreamableHTTPClientTransport(url, auth));
+
+    expect(httpResult.sessionCount()).toBe(2);
+
+    expect((await first.callTool({ name: "get_profile", arguments: {} })).isError).not.toBe(true);
+    expect((await second.callTool({ name: "get_profile", arguments: {} })).isError).not.toBe(true);
+  }, 15_000);
+
+  it("rejects an unknown session id with 400", async () => {
+    const httpResult = await createHttpServer({
+      createMcpServer: () => createWhoopServer(makeMockWhoopClient()).server,
+      authToken: "unknown-session-token",
+      port: 0,
+    });
+    cleanup = async (): Promise<void> => {
+      await httpResult.close();
+    };
+
+    const addr = httpResult.server.address();
+    if (!addr || typeof addr === "string") throw new Error("server has no port");
+
+    const res = await fetch(`http://127.0.0.1:${addr.port}/mcp`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer unknown-session-token",
+        "content-type": "application/json",
+        "mcp-session-id": "no-such-session",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "tools/list", id: 1 }),
+    });
+
+    expect(res.status).toBe(400);
   });
 });

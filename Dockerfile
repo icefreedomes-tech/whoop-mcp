@@ -40,7 +40,8 @@ FROM node:22-alpine AS runtime
 
 # Drop SUID bits, install tini for proper PID-1 signal handling. Alpine's
 # `apk` is preferred over apt (smaller layers) and tini is ~250KB.
-RUN apk add --no-cache tini \
+# su-exec lets the entrypoint drop from root to `node` without a login shell.
+RUN apk add --no-cache tini su-exec \
  && rm -rf /var/cache/apk/*
 
 WORKDIR /app
@@ -60,8 +61,9 @@ ENV NODE_ENV=production \
     LOG_LEVEL=info \
     LOG_FORMAT=json
 
-# Run as the unprivileged built-in `node` user (UID 1000).
-USER node
+# The entrypoint starts as root only long enough to take ownership of the
+# token volume, then execs the server as the unprivileged `node` user.
+COPY --chmod=0755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 3000
 
@@ -73,5 +75,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 # tini reaps zombie processes and forwards SIGTERM/SIGINT cleanly to Node,
 # which is critical for graceful shutdown of the HTTP server.
-ENTRYPOINT ["/sbin/tini", "--"]
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["node", "dist/index.js"]

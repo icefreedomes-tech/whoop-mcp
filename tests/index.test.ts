@@ -412,10 +412,9 @@ describe("main() entry point", () => {
 
   describe("transport selection", () => {
     function setupHttpHappyPath(): void {
-      const mockTransport = { _http: true };
       mockCreateHttpServer.mockResolvedValue({
         server: {},
-        transport: mockTransport,
+        sessionCount: () => 0,
         close: mockHttpClose,
       });
     }
@@ -457,8 +456,12 @@ describe("main() entry point", () => {
           port: 4001,
         })
       );
-      // server.connect was called with the http transport
-      expect(mockConnect).toHaveBeenCalledWith({ _http: true });
+      // HTTP builds one MCP server per session internally, so nothing is
+      // connected to a shared transport here.
+      expect(mockCreateHttpServer).toHaveBeenCalledWith(
+        expect.objectContaining({ createMcpServer: expect.any(Function) })
+      );
+      expect(mockConnect).not.toHaveBeenCalled();
     });
 
     it("MCP_TRANSPORT=both starts both stdio AND HTTP", async () => {
@@ -472,8 +475,8 @@ describe("main() entry point", () => {
 
       expect(MockStdioServerTransport).toHaveBeenCalledOnce();
       expect(mockCreateHttpServer).toHaveBeenCalledOnce();
-      // server.connect called for both transports
-      expect(mockConnect).toHaveBeenCalledTimes(2);
+      // Only stdio connects here; HTTP connects per session internally.
+      expect(mockConnect).toHaveBeenCalledTimes(1);
     });
 
     it("uses default port 3000 when MCP_PORT is unset", async () => {

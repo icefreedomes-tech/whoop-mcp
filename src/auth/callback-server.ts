@@ -31,10 +31,35 @@ export interface CallbackServerHandle {
 export interface CallbackServerOptions {
   /** Port to listen on. Default: 3000 */
   port?: number;
+  /**
+   * Address to bind. Default: `CALLBACK_HOST` env var, else 127.0.0.1.
+   * Cloud deployments must bind 0.0.0.0 to be reachable through a proxy.
+   */
+  host?: string;
   /** State parameter to validate against (CSRF protection) */
   expectedState: string;
-  /** How long to wait before timing out in ms. Default: 120_000 (2 min) */
+  /**
+   * How long to wait before timing out in ms. Default: `CALLBACK_TIMEOUT_MS`
+   * env var, else 120_000 (2 min).
+   */
   timeoutMs?: number;
+}
+
+/** Default bind address — overridable for deployments behind a proxy. */
+export const DEFAULT_CALLBACK_HOST = "127.0.0.1";
+
+/** Default OAuth callback wait — two minutes. */
+export const DEFAULT_CALLBACK_TIMEOUT_MS = 120_000;
+
+/**
+ * Read the callback timeout from the environment, ignoring values that are
+ * not a positive integer so a typo cannot silently disable the timeout.
+ */
+function timeoutFromEnv(): number {
+  const raw = process.env.CALLBACK_TIMEOUT_MS;
+  if (!raw) return DEFAULT_CALLBACK_TIMEOUT_MS;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CALLBACK_TIMEOUT_MS;
 }
 
 // ---------------------------------------------------------------------------
@@ -99,7 +124,8 @@ const HTML_RESPONSE_HEADERS = {
  */
 export function startCallbackServer(options: CallbackServerOptions): CallbackServerHandle {
   const requestedPort = options.port ?? 3000;
-  const timeoutMs = options.timeoutMs ?? 120_000;
+  const host = options.host ?? process.env.CALLBACK_HOST ?? DEFAULT_CALLBACK_HOST;
+  const timeoutMs = options.timeoutMs ?? timeoutFromEnv();
 
   let resolvedPort = requestedPort;
 
@@ -198,7 +224,7 @@ export function startCallbackServer(options: CallbackServerOptions): CallbackSer
       }
     });
 
-    server.listen(requestedPort, "127.0.0.1", () => {
+    server.listen(requestedPort, host, () => {
       const addr = server.address();
       if (addr && typeof addr === "object") {
         resolvedPort = addr.port;

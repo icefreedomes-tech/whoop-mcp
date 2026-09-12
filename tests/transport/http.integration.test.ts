@@ -70,15 +70,14 @@ describe("HTTP transport — MCP integration", () => {
   it("initialize → tools/list → tools/call get_profile returns mocked WHOOP data", async () => {
     // Wire a real WhoopClient + McpServer behind the HTTP transport.
     const whoopClient = createWhoopClient({ accessToken: "fake-access-token" });
-    const { server: mcpServer } = createWhoopServer(whoopClient, { disableResources: true });
 
     httpResult = await createHttpServer({
+      createMcpServer: () => createWhoopServer(whoopClient, { disableResources: true }).server,
       authToken: AUTH_TOKEN,
       port: 0,
       host: "127.0.0.1",
       sseReauthIntervalMs: 0,
     });
-    await mcpServer.connect(httpResult.transport);
 
     client = new Client({ name: "integration-test-client", version: "0.0.0" });
     const clientTransport = new StreamableHTTPClientTransport(getServerUrl(httpResult), {
