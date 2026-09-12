@@ -180,29 +180,41 @@ describe("HTTP transport — MCP integration", () => {
     expect((await second.callTool({ name: "get_profile", arguments: {} })).isError).not.toBe(true);
   }, 15_000);
 
-  it("rejects an unknown session id with 400", async () => {
-    const httpResult = await createHttpServer({
-      createMcpServer: () => createWhoopServer(makeMockWhoopClient()).server,
-      authToken: "unknown-session-token",
-      port: 0,
+  // Regression: sessions live in memory, so a redeploy orphans every client's
+  // session id. The spec makes 404 the signal to re-initialize; answering 400
+  // left claude.ai retrying a dead session until the connector was reconnected.
+  describe("session id handling", () => {
+    async function postToMcp(sessionId: string | undefined): Promise<number> {
+      const httpResult = await createHttpServer({
+        createMcpServer: () => createWhoopServer(makeMockWhoopClient()).server,
+        authToken: "session-token",
+        port: 0,
+      });
+      cleanup = async (): Promise<void> => {
+        await httpResult.close();
+      };
+
+      const addr = httpResult.server.address();
+      if (!addr || typeof addr === "string") throw new Error("server has no port");
+
+      const res = await fetch(`http://127.0.0.1:${addr.port}/mcp`, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer session-token",
+          "content-type": "application/json",
+          ...(sessionId ? { "mcp-session-id": sessionId } : {}),
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "tools/list", id: 1 }),
+      });
+      return res.status;
+    }
+
+    it("answers an unknown session id with 404 so the client re-initializes", async () => {
+      expect(await postToMcp("session-from-before-a-restart")).toBe(404);
     });
-    cleanup = async (): Promise<void> => {
-      await httpResult.close();
-    };
 
-    const addr = httpResult.server.address();
-    if (!addr || typeof addr === "string") throw new Error("server has no port");
-
-    const res = await fetch(`http://127.0.0.1:${addr.port}/mcp`, {
-      method: "POST",
-      headers: {
-        authorization: "Bearer unknown-session-token",
-        "content-type": "application/json",
-        "mcp-session-id": "no-such-session",
-      },
-      body: JSON.stringify({ jsonrpc: "2.0", method: "tools/list", id: 1 }),
+    it("answers a non-initialize request without a session id with 400", async () => {
+      expect(await postToMcp(undefined)).toBe(400);
     });
-
-    expect(res.status).toBe(400);
   });
 });

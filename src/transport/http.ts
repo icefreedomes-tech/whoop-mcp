@@ -404,7 +404,10 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
         if (sessionId) {
           const session = sessions.get(sessionId);
           if (!session) {
-            sendJsonRpcError(res, 400, "Unknown or expired MCP session.");
+            // The spec requires 404 here: it is the only status on which a client
+            // must re-initialize. Sessions live in memory, so every restart or
+            // redeploy orphans them — a 400 left clients stuck until reconnected.
+            sendJsonRpcError(res, 404, "Unknown or expired MCP session.");
             return;
           }
           await session.transport.handleRequest(req, res, parsedBody);
