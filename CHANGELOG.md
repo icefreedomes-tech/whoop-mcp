@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `WHOOP_REDIRECT_URI` is now honoured, and `CALLBACK_HOST` / `CALLBACK_TIMEOUT_MS` configure the first-run OAuth callback, so authorization can complete behind a cloud proxy.
+- A broken output contract names the mismatched fields — paths and type messages only, never values — instead of a bare "did not match" error.
+
+### Changed
+- **Breaking (library use):** `createHttpServer` requires a `createMcpServer` factory, and `HttpServerResult.transport` is replaced by `sessionCount()`.
+
+### Fixed
+- The HTTP transport serves concurrent MCP sessions with one transport and server per session id. A single shared transport served one session only, so the claude.ai connector's second client got 400.
+- An unknown or expired session id is answered with 404, as the Streamable HTTP spec requires, so clients start a new session after a restart instead of failing until reconnected.
+- Protected-resource metadata is served at `/.well-known/oauth-protected-resource/mcp` as well as the root path (RFC 9728).
+- The Docker entrypoint takes ownership of the token directory, pins `HOME`, and drops to the `node` user, so a root-owned volume works without running the server as root.
+- Collections whose last page carries `next_token: null` are handled: `get_baselines` and `get_sleep_debt` no longer mark every source invalid, the collection tools no longer fail on their last page, and pagination no longer reports false truncation.
+- Workouts with null `distance_meter` and altitude fields (e.g. strength training) are no longer rejected.
+- Workout `percent_recorded` is treated as the 0–1 fraction WHOOP sends; `get_today` reports it as 0–100.
+
 ## [0.7.0] - 2026-09-10
 
 **Trustworthy Personal Analytics**
