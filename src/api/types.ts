@@ -169,9 +169,10 @@ export interface WorkoutScore {
   kilojoule: number;
   percent_recorded: number;
   zone_durations: ZoneDurations;
-  distance_meter?: number;
-  altitude_gain_meter?: number;
-  altitude_change_meter?: number;
+  /** Null for workouts without movement, such as strength training. */
+  distance_meter?: number | null;
+  altitude_gain_meter?: number | null;
+  altitude_change_meter?: number | null;
 }
 
 /** A single workout record (maps to OpenAPI WorkoutV2) */
