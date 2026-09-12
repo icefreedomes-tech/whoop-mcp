@@ -300,7 +300,7 @@ export function createWhoopServer(client: WhoopClient, options?: CreateServerOpt
     "get_workout_collection",
     {
       description:
-        'Get workout records for a date range. Accepts ISO 8601 or relative dates ("today", "last 7 days", "this week"). Returns strain, heart rate zones, calories, and sport type.',
+        'Get workout records for a date range. Accepts ISO 8601 or relative dates ("today", "last 7 days", "this week"). Returns strain, heart rate zones, calories, and sport type. score.percent_recorded is a 0–1 fraction (1 = fully recorded), not a percentage.',
       inputSchema: collectionInputSchema,
       annotations: { readOnlyHint: true },
     },
@@ -344,7 +344,7 @@ export function createWhoopServer(client: WhoopClient, options?: CreateServerOpt
     "get_workout_by_id",
     {
       description:
-        "Get a single workout record by its ID. Returns strain, heart rate zones, calories, and sport type.",
+        "Get a single workout record by its ID. Returns strain, heart rate zones, calories, and sport type. score.percent_recorded is a 0–1 fraction (1 = fully recorded), not a percentage.",
       inputSchema: stringIdSchema,
       annotations: { readOnlyHint: true },
     },

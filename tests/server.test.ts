@@ -110,7 +110,7 @@ const WORKOUT_FIXTURE: WorkoutCollection = {
         average_heart_rate: 155,
         max_heart_rate: 182,
         kilojoule: 2100,
-        percent_recorded: 100,
+        percent_recorded: 1,
         zone_durations: {
           zone_zero_milli: 0,
           zone_one_milli: 120000,
@@ -766,7 +766,7 @@ describe("createWhoopServer (error handling)", () => {
         average_heart_rate: 120,
         max_heart_rate: 160,
         kilojoule: 900,
-        percent_recorded: 100,
+        percent_recorded: 1,
         zone_durations: {
           zone_zero_milli: 0,
           zone_one_milli: 0,

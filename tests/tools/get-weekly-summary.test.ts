@@ -105,7 +105,7 @@ function makeWorkout(overrides: Partial<Workout> = {}): Workout {
       average_heart_rate: 145,
       max_heart_rate: 175,
       kilojoule: 1200,
-      percent_recorded: 100,
+      percent_recorded: 1,
       zone_durations: {
         zone_zero_milli: 0,
         zone_one_milli: 600000,
@@ -275,7 +275,7 @@ describe("getWeeklySummary", () => {
           average_heart_rate: 145,
           max_heart_rate: 175,
           kilojoule: 1200,
-          percent_recorded: 100,
+          percent_recorded: 1,
           zone_durations: {
             zone_zero_milli: 0,
             zone_one_milli: 0,
@@ -294,7 +294,7 @@ describe("getWeeklySummary", () => {
           average_heart_rate: 140,
           max_heart_rate: 170,
           kilojoule: 1000,
-          percent_recorded: 100,
+          percent_recorded: 1,
           zone_durations: {
             zone_zero_milli: 0,
             zone_one_milli: 0,
@@ -313,7 +313,7 @@ describe("getWeeklySummary", () => {
           average_heart_rate: 135,
           max_heart_rate: 160,
           kilojoule: 900,
-          percent_recorded: 100,
+          percent_recorded: 1,
           zone_durations: {
             zone_zero_milli: 0,
             zone_one_milli: 0,

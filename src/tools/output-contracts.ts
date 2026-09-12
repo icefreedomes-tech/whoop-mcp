@@ -107,7 +107,7 @@ const today = z.object({
           sport_name: z.string(),
           strain: number,
           occurred_at: z.string(),
-          percent_recorded: number,
+          percent_recorded: number.min(0).max(100),
         })
         .nullable(),
     })

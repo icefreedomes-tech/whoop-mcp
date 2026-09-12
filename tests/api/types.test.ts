@@ -307,7 +307,7 @@ describe("workout types", () => {
         average_heart_rate: 123,
         max_heart_rate: 146,
         kilojoule: 1569.34033203125,
-        percent_recorded: 100.0,
+        percent_recorded: 1,
         distance_meter: 1772.77035916,
         altitude_gain_meter: 46.64384460449,
         altitude_change_meter: -0.781372010707855,
@@ -364,7 +364,7 @@ describe("workout types", () => {
             average_heart_rate: 123,
             max_heart_rate: 146,
             kilojoule: 1569.34,
-            percent_recorded: 100.0,
+            percent_recorded: 1,
             zone_durations: {
               zone_zero_milli: 300000,
               zone_one_milli: 600000,

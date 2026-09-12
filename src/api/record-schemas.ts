@@ -2,6 +2,7 @@ import { z } from "zod";
 
 const nonnegative = z.number().finite().nonnegative();
 const percentage = nonnegative.max(100);
+const fraction = nonnegative.max(1);
 export const timestampSchema = z.string().datetime({ offset: true });
 export const offsetSchema = z.string().regex(/^[+-](?:0\d|1[0-4]):[0-5]\d$/);
 const common = {
@@ -95,7 +96,8 @@ export const workoutRecordSchema = z
         average_heart_rate: nonnegative,
         max_heart_rate: nonnegative,
         kilojoule: nonnegative,
-        percent_recorded: percentage,
+        // Despite the name, a 0–1 fraction (1 = fully recorded).
+        percent_recorded: fraction,
         zone_durations: z.object({
           zone_zero_milli: nonnegative,
           zone_one_milli: nonnegative,

@@ -167,6 +167,7 @@ export interface WorkoutScore {
   average_heart_rate: number;
   max_heart_rate: number;
   kilojoule: number;
+  /** Despite the name, a 0–1 fraction of the workout with heart-rate data. */
   percent_recorded: number;
   zone_durations: ZoneDurations;
   /** Null for workouts without movement, such as strength training. */

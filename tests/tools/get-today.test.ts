@@ -99,7 +99,7 @@ const mockWorkout: Workout = {
     average_heart_rate: 145,
     max_heart_rate: 172,
     kilojoule: 800,
-    percent_recorded: 100,
+    percent_recorded: 0.9991369,
     zone_durations: {
       zone_zero_milli: 0,
       zone_one_milli: 60000,
@@ -315,6 +315,21 @@ describe("getToday", () => {
     expect(result.strain!.last_workout).not.toBeNull();
     expect(result.strain!.last_workout!.sport_name).toBe("Running");
     expect(result.strain!.last_workout!.strain).toBe(12.5);
+  });
+
+  // Regression: WHOOP sends percent_recorded as a 0–1 fraction. get_today passed
+  // it through under a "percent" name, so a fully recorded workout read as 1%.
+  it("reports the last workout's recorded share as a percentage", async () => {
+    const client = createMockClient({
+      "/v2/recovery": { records: [mockRecovery], next_token: null },
+      "/v2/activity/sleep": { records: [mockSleep], next_token: null },
+      "/v2/cycle": { records: [mockCycle], next_token: null },
+      "/v2/activity/workout": { records: [mockWorkout], next_token: null },
+    });
+
+    const result = await getToday(client);
+
+    expect(result.strain!.last_workout!.percent_recorded).toBeCloseTo(99.91369, 4);
   });
 
   it("includes a human-readable summary", async () => {

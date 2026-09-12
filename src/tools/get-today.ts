@@ -67,6 +67,7 @@ export interface TodayLastWorkout {
   sport_name: string;
   strain: number;
   occurred_at: string;
+  /** 0–100, converted from WHOOP's 0–1 fraction. */
   percent_recorded: number;
 }
 
@@ -327,7 +328,7 @@ export async function getToday(
             sport_name: workout.sport_name,
             strain: workout.score.strain,
             occurred_at: workout.start,
-            percent_recorded: workout.score.percent_recorded,
+            percent_recorded: workout.score.percent_recorded * 100,
           };
         }
       }
