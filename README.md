@@ -784,6 +784,22 @@ Required env vars (HTTP mode):
 | `ALLOWED_REDIRECT_URIS` | no       | —            | Comma-separated exact-match list of OAuth redirect URIs.    |
 | `MCP_JWT_SECRET`        | no       | (HKDF)       | Override JWT signing key. Defaults to HKDF derivation from `MCP_AUTH_TOKEN`. |
 | `MCP_OAUTH_CLIENT_ID`   | no       | `whoop-mcp-connector` | OAuth client identifier advertised by the connector. |
+| `WHOOP_REDIRECT_URI`    | cloud    | `http://localhost:3000/callback` | Must match the redirect URI in your WHOOP app. In the cloud, `https://<your-domain>/callback`. |
+| `CALLBACK_HOST`         | cloud    | `127.0.0.1`  | Interface for the first-run OAuth callback. Set `0.0.0.0` behind a proxy, or the callback returns 502. |
+| `CALLBACK_TIMEOUT_MS`   | no       | `120000`     | How long first-run authorization waits. Raise it (e.g. `900000`) when you open the URL from deploy logs. |
+
+#### Token persistence and first authorization
+
+WHOOP tokens are written to `~/.whoop-mcp/tokens.json`, which is
+`/home/node/.whoop-mcp` in the image. **Mount a persistent volume there**, or
+every redeploy discards the tokens and asks for authorization again. The image
+entrypoint takes ownership of that directory before dropping to the
+unprivileged `node` user, so a root-owned volume works as mounted.
+
+On the very first start there are no tokens, so the server prints a WHOOP
+authorization URL to the logs and waits `CALLBACK_TIMEOUT_MS` for the callback
+before it starts serving `/mcp` or `/health`. Open the URL, approve access, and
+the tokens land on the volume; later starts reuse them with no browser step.
 
 ### Fly.io
 
@@ -819,11 +835,20 @@ in logs and rate-limit decisions.
 [Railway](https://railway.app) auto-detects the Dockerfile.
 
 1. Create a new project from this GitHub repo (or `railway up` from a clone).
-2. In **Variables**, add `MCP_AUTH_TOKEN`, `WHOOP_CLIENT_ID`,
-   `WHOOP_CLIENT_SECRET`, and `MCP_TRUST_PROXY=1`.
-3. Under **Settings → Networking**, generate a public domain. Railway
-   terminates TLS for you.
-4. Deploy. Health check path: `/health`.
+2. Under **Settings → Networking**, generate a public domain. Railway
+   terminates TLS for you. Set your WHOOP app's redirect URI to
+   `https://<that-domain>/callback`.
+3. Attach a volume mounted at `/home/node/.whoop-mcp` (see
+   [Token persistence](#token-persistence-and-first-authorization)).
+4. In **Variables**, add `MCP_AUTH_TOKEN`, `WHOOP_CLIENT_ID`,
+   `WHOOP_CLIENT_SECRET`, `MCP_TRUST_PROXY=1`,
+   `WHOOP_REDIRECT_URI=https://<that-domain>/callback`, `CALLBACK_HOST=0.0.0.0`
+   and `CALLBACK_TIMEOUT_MS=900000`.
+5. Deploy, then open the authorization URL printed in the deploy logs.
+6. Only after the first authorization succeeds, optionally set the health
+   check path to `/health`. Set it earlier and the first start deadlocks:
+   Railway withholds traffic until the check passes, and the server does not
+   serve `/health` until it has received its own OAuth callback.
 
 ### Other platforms
 
