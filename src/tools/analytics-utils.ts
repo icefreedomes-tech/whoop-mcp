@@ -107,7 +107,8 @@ export async function loadAnalyticsSource<T>(
   const query = new URLSearchParams({ ...period, limit: "25" });
   const pageSchema = z.object({
     records: z.array(z.unknown()),
-    next_token: z.string().max(4096).optional(),
+    // WHOOP sends null on the last page, contrary to its docs' omitted field.
+    next_token: z.string().max(4096).nullish(),
   });
   const validatedClient: WhoopClient = {
     get: async <Result>(path: string): Promise<Result> =>

@@ -154,6 +154,23 @@ describe("fetchAllPages", () => {
     expect(getMock).toHaveBeenCalledTimes(1);
   });
 
+  // WHOOP marks the last page with `next_token: null`, not an omitted field.
+  it("treats next_token: null as the end of the collection", async () => {
+    const { client, getMock } = createMockClient([
+      { records: makeRecords(1, 10), next_token: "token_2" },
+      { records: makeRecords(11, 5), next_token: null },
+    ]);
+
+    const result = await fetchAllPages<MockRecord>(client, "/v2/recovery", {
+      maxRecords: 15,
+      interPageDelayMs: 0,
+    });
+
+    expect(result.records).toHaveLength(15);
+    expect(result.truncated).toBe(false);
+    expect(getMock).toHaveBeenCalledTimes(2);
+  });
+
   it("defaults maxRecords to 100", async () => {
     // Create 11 pages of 10 records each (110 total)
     const responses: Array<PaginatedResponse<MockRecord>> = [];
