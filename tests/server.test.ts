@@ -747,6 +747,59 @@ describe("createWhoopServer (error handling)", () => {
       await server.close();
     }
   });
+
+  // A bare "did not match the contract" made an upstream shape change impossible
+  // to diagnose. Name the fields — but never echo values, which are health data.
+  it("names the mismatched fields of a broken output contract without echoing values", async () => {
+    const brokenWorkout = (id: string): Record<string, unknown> => ({
+      id,
+      user_id: 1,
+      created_at: "2026-09-01T10:00:00.000Z",
+      updated_at: "2026-09-01T10:00:00.000Z",
+      start: "2026-09-01T09:00:00.000Z",
+      end: "2026-09-01T10:00:00.000Z",
+      timezone_offset: "+02:00",
+      sport_name: "running",
+      score_state: "SCORED",
+      score: {
+        strain: "sentinel-value-9731",
+        average_heart_rate: 120,
+        max_heart_rate: 160,
+        kilojoule: 900,
+        percent_recorded: 100,
+        zone_durations: {
+          zone_zero_milli: 0,
+          zone_one_milli: 0,
+          zone_two_milli: 0,
+          zone_three_milli: 0,
+          zone_four_milli: 0,
+          zone_five_milli: 0,
+        },
+      },
+    });
+    const brokenClient: WhoopClient = {
+      get: async <T>(): Promise<T> =>
+        ({ records: [brokenWorkout("w-1"), brokenWorkout("w-2")], next_token: null }) as T,
+    };
+    const { server } = createWhoopServer(brokenClient);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const mcpClient = new Client({ name: "contract-test", version: "1.0.0" });
+    await Promise.all([mcpClient.connect(clientTransport), server.connect(serverTransport)]);
+
+    try {
+      const result = await mcpClient.callTool({ name: "get_workout_collection", arguments: {} });
+
+      expect(result.isError).toBe(true);
+      const text = (result.content as Array<{ type: string; text: string }>)[0].text;
+      expect(text).toContain("did not match the expected output contract");
+      expect(text).toContain("records.*.score.strain");
+      expect(text).toContain("×2");
+      expect(text).not.toContain("sentinel-value-9731");
+    } finally {
+      await mcpClient.close();
+      await server.close();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

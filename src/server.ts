@@ -115,6 +115,23 @@ function jsonContent(data: unknown): CallToolResult {
   };
 }
 
+/**
+ * Summarise which fields broke an output contract. Array indexes collapse to
+ * `*` so one shape change across many records reads as a single line. Only
+ * paths and zod's type messages are included — never the values themselves.
+ */
+function describeContractIssues(error: z.ZodError): string {
+  const counts = new Map<string, number>();
+  for (const issue of error.issues) {
+    const path = issue.path.map((key) => (typeof key === "number" ? "*" : String(key))).join(".");
+    const line = `${path || "(root)"}: ${issue.message}`;
+    counts.set(line, (counts.get(line) ?? 0) + 1);
+  }
+  const lines = [...counts].map(([line, count]) => (count > 1 ? `${line} (×${count})` : line));
+  const shown = lines.slice(0, 5).join("; ");
+  return lines.length > 5 ? `${shown}; +${lines.length - 5} more` : shown;
+}
+
 // ---------------------------------------------------------------------------
 // Error response helper
 // ---------------------------------------------------------------------------
@@ -207,7 +224,12 @@ export function createWhoopServer(client: WhoopClient, options?: CreateServerOpt
           return {
             isError: true,
             content: [
-              { type: "text", text: "WHOOP data did not match the expected output contract." },
+              {
+                type: "text",
+                text:
+                  "WHOOP data did not match the expected output contract. " +
+                  describeContractIssues(validated.error),
+              },
             ],
           };
         return jsonContent(
