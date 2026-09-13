@@ -442,6 +442,22 @@ describe("createWhoopServer", () => {
       expect(parsed).toEqual(RECOVERY_FIXTURE);
     });
 
+    // Regression: an unrecognised date came back as "An unexpected error
+    // occurred", so the model reported the WHOOP API as failing instead of
+    // correcting its argument.
+    it("explains an unrecognised date expression instead of a generic failure", async () => {
+      const result = await client.callTool({
+        name: "get_sleep_collection",
+        arguments: { start: "last night" },
+      });
+
+      expect(result.isError).toBe(true);
+      const text = (result.content as Array<{ type: string; text: string }>)[0].text;
+      expect(text).toContain('Unrecognized date expression: "last night"');
+      expect(text).toContain('"yesterday"');
+      expect(text).not.toContain("unexpected error");
+    });
+
     it("get_sleep_collection returns sleep data as JSON text", async () => {
       const result = await client.callTool({
         name: "get_sleep_collection",

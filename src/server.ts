@@ -25,7 +25,7 @@ import { getToday } from "./tools/get-today.js";
 import { getCalendar } from "./tools/get-calendar.js";
 import { registerResources } from "./resources/index.js";
 import { registerPrompts } from "./prompts/index.js";
-import { ISO_8601_REGEX } from "./tools/date-utils.js";
+import { ISO_8601_REGEX, InvalidDateExpression } from "./tools/date-utils.js";
 import { readFileSync } from "node:fs";
 import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { getBaselines, baselinesInputSchema } from "./tools/get-baselines.js";
@@ -149,6 +149,10 @@ function errorResponse(error: unknown): {
     message = "WHOOP authentication failed. Run setup --verify to reconnect.";
   } else if (error instanceof WhoopNetworkError) {
     message = "Network error: Unable to reach the WHOOP API. Check your internet connection.";
+  } else if (error instanceof InvalidDateExpression) {
+    // Our own wording, listing the accepted forms, so the caller can correct
+    // the argument rather than report the WHOOP API as broken.
+    message = error.message;
   } else if (error instanceof z.ZodError || error instanceof RangeError) {
     message = "Invalid input or data. Check the requested parameters and date range.";
   } else {
