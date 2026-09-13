@@ -182,6 +182,13 @@ export function createWhoopClient(options: WhoopClientOptions): WhoopClient {
         logger?.info("whoop token refreshed", logExtras({ url }));
         return token;
       })
+      .catch((error: unknown) => {
+        logger?.error(
+          "whoop token refresh failed",
+          logExtras({ url, error: error instanceof Error ? error.message : String(error) })
+        );
+        throw error;
+      })
       .finally(() => {
         refreshInFlight = undefined;
       });

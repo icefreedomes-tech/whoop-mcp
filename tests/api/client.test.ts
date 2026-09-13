@@ -979,6 +979,37 @@ describe("createWhoopClient — logger integration", () => {
     expect(typeof extra.durationMs).toBe("number");
   });
 
+  // A failed refresh surfaced only as a source marked fetch_failed inside an
+  // otherwise successful tool result, so it left no trace in the server logs.
+  it("logs at error level when a token refresh fails", async () => {
+    const onTokenRefresh = vi
+      .fn()
+      .mockRejectedValue(new Error("Token refresh failed (400): invalid_grant"));
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+      json: () => Promise.resolve({ error: "invalid_token" }),
+      text: () => Promise.resolve('{"error":"invalid_token"}'),
+    } as Response);
+
+    const client = createWhoopClient({
+      accessToken: TEST_TOKEN,
+      baseUrl: TEST_BASE_URL,
+      onTokenRefresh,
+      logger,
+    });
+    await expect(client.get("/v2/activity/sleep")).rejects.toThrow(WhoopAuthError);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      "whoop token refresh failed",
+      expect.objectContaining({
+        url: `${TEST_BASE_URL}/v2/activity/sleep`,
+        error: "Token refresh failed (400): invalid_grant",
+      })
+    );
+  });
+
   it("logs at info level when token is refreshed after 401", async () => {
     const onTokenRefresh = vi.fn().mockResolvedValue("new_token");
     mockFetch
