@@ -86,7 +86,7 @@ const collectionInputSchema = z.object({
     .string()
     .optional()
     .describe(
-      'Return records after this time (inclusive). ISO 8601 format or relative expression (e.g. "today", "last 7 days", "this week").'
+      'Return records after this time (inclusive). ISO 8601 format or relative expression (e.g. "today", "last 7 days", "this week"). A date or time without an offset is UTC; include an offset (e.g. "2026-09-13T00:00+02:00") for local time.'
     ),
   end: z
     .string()

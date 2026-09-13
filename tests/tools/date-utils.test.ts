@@ -61,10 +61,28 @@ describe("resolveDateExpression", () => {
     expect(result).toEqual({ start: iso, end: iso });
   });
 
-  it("passes through ISO 8601 date-only strings unchanged", () => {
-    const iso = "2026-01-15";
-    const result = resolveDateExpression(iso);
-    expect(result).toEqual({ start: iso, end: iso });
+  // Regression: WHOOP answers 404 to any date or date-time without an offset,
+  // so a bare "2026-01-15" — the form models use most — never returned data.
+  // A date means that whole UTC day, like "yesterday" or "YYYY-MM".
+  it("resolves an ISO 8601 date-only string to its full UTC day", () => {
+    expect(resolveDateExpression("2026-01-15")).toEqual({
+      start: "2026-01-15T00:00:00.000Z",
+      end: "2026-01-15T23:59:59.999Z",
+    });
+  });
+
+  it("resolves an ISO 8601 date-time without an offset as UTC", () => {
+    expect(resolveDateExpression("2026-09-11T00:00:00")).toEqual({
+      start: "2026-09-11T00:00:00Z",
+      end: "2026-09-11T00:00:00Z",
+    });
+    expect(resolveDateExpression("2026-09-11T06:15:30.250").start).toBe(
+      "2026-09-11T06:15:30.250Z"
+    );
+  });
+
+  it("rejects a date that is not on the calendar", () => {
+    expect(() => resolveDateExpression("2026-02-30")).toThrow(InvalidDateExpression);
   });
 
   it("passes through ISO 8601 with timezone offset", () => {
@@ -78,8 +96,8 @@ describe("resolveDateExpression", () => {
   // ever reached WHOOP.
   it("accepts an ISO 8601 date-time without seconds and completes it", () => {
     expect(resolveDateExpression("2026-09-13T00:00")).toEqual({
-      start: "2026-09-13T00:00:00",
-      end: "2026-09-13T00:00:00",
+      start: "2026-09-13T00:00:00Z",
+      end: "2026-09-13T00:00:00Z",
     });
     expect(resolveDateExpression("2026-09-13T08:30+02:00").start).toBe(
       "2026-09-13T08:30:00+02:00"

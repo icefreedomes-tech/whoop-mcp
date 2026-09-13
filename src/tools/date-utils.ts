@@ -42,8 +42,15 @@ const MAX_LAST_N_DAYS = 365;
 export const ISO_8601_REGEX =
   /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})?)?$/;
 
-/** ISO 8601 date-time to the minute, e.g. 2026-09-13T08:30 or 2026-09-13T08:30+02:00 */
-const ISO_WITHOUT_SECONDS_REGEX = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(Z|[+-]\d{2}:\d{2})?$/;
+/** ISO 8601 calendar date, e.g. 2026-09-13 */
+const ISO_DATE_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * ISO 8601 date-time to the minute or second, capturing the seconds and offset
+ * separately, e.g. 2026-09-13T08:30, 2026-09-13T08:30:15.250+02:00
+ */
+const ISO_DATE_TIME_REGEX =
+  /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(:\d{2}(?:\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})?$/;
 
 /** Regex for "last N days" expressions */
 const LAST_N_DAYS_REGEX = /^last\s+(\d+)\s+days?$/i;
@@ -138,16 +145,26 @@ export function resolveDateExpression(expression: string, now: Date = new Date()
     throw new InvalidDateExpression("Unrecognized date expression: empty string");
   }
 
-  // ISO 8601 pass-through
-  if (ISO_8601_REGEX.test(trimmed)) {
-    return { start: trimmed, end: trimmed };
+  // WHOOP answers 404 to any date or date-time without an offset, so every ISO
+  // form is resolved to a full timestamp. Offset-less input is taken as UTC,
+  // matching the UTC day boundaries of the relative expressions below.
+
+  // ISO 8601 date: the whole UTC day, like "yesterday" or "YYYY-MM"
+  const date = trimmed.match(ISO_DATE_REGEX);
+  if (date?.[1] && date[2] && date[3]) {
+    const [year, month, day] = [Number(date[1]), Number(date[2]), Number(date[3])];
+    const resolved = new Date(Date.UTC(year, month - 1, day));
+    if (resolved.getUTCMonth() !== month - 1 || resolved.getUTCDate() !== day) {
+      throw new InvalidDateExpression(`Invalid calendar date: "${trimmed}".`);
+    }
+    return { start: startOfDayUTC(resolved), end: endOfDayUTC(resolved) };
   }
 
-  // ISO 8601 allows omitting seconds; complete them so WHOOP gets a full time.
-  const withoutSeconds = trimmed.match(ISO_WITHOUT_SECONDS_REGEX);
-  if (withoutSeconds?.[1]) {
-    const completed = `${withoutSeconds[1]}:00${withoutSeconds[2] ?? ""}`;
-    return { start: completed, end: completed };
+  // ISO 8601 date-time: complete omitted seconds, default the offset to UTC
+  const dateTime = trimmed.match(ISO_DATE_TIME_REGEX);
+  if (dateTime?.[1]) {
+    const full = `${dateTime[1]}${dateTime[2] ?? ":00"}${dateTime[3] ?? "Z"}`;
+    return { start: full, end: full };
   }
 
   const lower = trimmed.toLowerCase();
