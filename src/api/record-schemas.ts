@@ -32,6 +32,7 @@ export const recoveryRecordSchema = z
         spo2_percentage: percentage.optional(),
         skin_temp_celsius: z.number().finite().optional(),
       })
+      .passthrough()
       .nullish(),
   })
   .passthrough();
@@ -44,27 +45,32 @@ export const sleepRecordSchema = z
     nap: z.boolean(),
     score: z
       .object({
-        stage_summary: z.object({
-          total_in_bed_time_milli: nonnegative,
-          total_awake_time_milli: nonnegative,
-          total_no_data_time_milli: nonnegative,
-          total_light_sleep_time_milli: nonnegative,
-          total_slow_wave_sleep_time_milli: nonnegative,
-          total_rem_sleep_time_milli: nonnegative,
-          sleep_cycle_count: nonnegative,
-          disturbance_count: nonnegative,
-        }),
-        sleep_needed: z.object({
-          baseline_milli: nonnegative,
-          need_from_sleep_debt_milli: z.number().finite(),
-          need_from_recent_strain_milli: z.number().finite(),
-          need_from_recent_nap_milli: z.number().finite(),
-        }),
+        stage_summary: z
+          .object({
+            total_in_bed_time_milli: nonnegative,
+            total_awake_time_milli: nonnegative,
+            total_no_data_time_milli: nonnegative,
+            total_light_sleep_time_milli: nonnegative,
+            total_slow_wave_sleep_time_milli: nonnegative,
+            total_rem_sleep_time_milli: nonnegative,
+            sleep_cycle_count: nonnegative,
+            disturbance_count: nonnegative,
+          })
+          .passthrough(),
+        sleep_needed: z
+          .object({
+            baseline_milli: nonnegative,
+            need_from_sleep_debt_milli: z.number().finite(),
+            need_from_recent_strain_milli: z.number().finite(),
+            need_from_recent_nap_milli: z.number().finite(),
+          })
+          .passthrough(),
         respiratory_rate: nonnegative.optional(),
         sleep_performance_percentage: percentage.optional(),
         sleep_efficiency_percentage: percentage.optional(),
         sleep_consistency_percentage: percentage.optional(),
       })
+      .passthrough()
       .nullish(),
   })
   .passthrough();
@@ -81,6 +87,7 @@ export const cycleRecordSchema = z
         average_heart_rate: nonnegative,
         max_heart_rate: nonnegative,
       })
+      .passthrough()
       .nullish(),
   })
   .passthrough();
@@ -98,19 +105,22 @@ export const workoutRecordSchema = z
         kilojoule: nonnegative,
         // Despite the name, a 0–1 fraction (1 = fully recorded).
         percent_recorded: fraction,
-        zone_durations: z.object({
-          zone_zero_milli: nonnegative,
-          zone_one_milli: nonnegative,
-          zone_two_milli: nonnegative,
-          zone_three_milli: nonnegative,
-          zone_four_milli: nonnegative,
-          zone_five_milli: nonnegative,
-        }),
+        zone_durations: z
+          .object({
+            zone_zero_milli: nonnegative,
+            zone_one_milli: nonnegative,
+            zone_two_milli: nonnegative,
+            zone_three_milli: nonnegative,
+            zone_four_milli: nonnegative,
+            zone_five_milli: nonnegative,
+          })
+          .passthrough(),
         // Null, not omitted, for workouts without movement (e.g. strength).
         distance_meter: z.number().finite().nullish(),
         altitude_gain_meter: z.number().finite().nullish(),
         altitude_change_meter: z.number().finite().nullish(),
       })
+      .passthrough()
       .nullish(),
   })
   .passthrough();

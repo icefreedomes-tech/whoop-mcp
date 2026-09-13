@@ -61,6 +61,53 @@ describe("collection output contracts", () => {
     expect(result?.success).toBe(true);
   });
 
+  // Nested score objects silently dropped every field the schema did not name,
+  // so anything WHOOP sends beyond its documented contract — strength-trainer
+  // detail on a workout, say — could never be seen by the client.
+  it("keeps undocumented fields inside workout, sleep and recovery scores", () => {
+    const workout = {
+      ...STRENGTH_WORKOUT,
+      score: {
+        ...STRENGTH_WORKOUT.score,
+        undocumented_detail: [{ name: "squat", sets: 3 }],
+        zone_durations: { ...STRENGTH_WORKOUT.score.zone_durations, zone_extra_milli: 7 },
+      },
+    };
+    const sleep = sleepFixture(0);
+    const recovery = recoveryFixture(0);
+
+    const workouts = outputSchemas.get_workout_collection?.parse({ records: [workout] }) as {
+      records: Array<{
+        score: Record<string, unknown> & { zone_durations: Record<string, unknown> };
+      }>;
+    };
+    const sleeps = outputSchemas.get_sleep_collection?.parse({
+      records: [
+        {
+          ...sleep,
+          score: {
+            ...sleep.score,
+            undocumented_metric: 1,
+            stage_summary: { ...sleep.score?.stage_summary, undocumented_stage: 2 },
+          },
+        },
+      ],
+    }) as {
+      records: Array<{
+        score: Record<string, unknown> & { stage_summary: Record<string, unknown> };
+      }>;
+    };
+    const recoveries = outputSchemas.get_recovery_collection?.parse({
+      records: [{ ...recovery, score: { ...recovery.score, undocumented_metric: 3 } }],
+    }) as { records: Array<{ score: Record<string, unknown> }> };
+
+    expect(workouts.records[0]?.score.undocumented_detail).toEqual([{ name: "squat", sets: 3 }]);
+    expect(workouts.records[0]?.score.zone_durations.zone_extra_milli).toBe(7);
+    expect(sleeps.records[0]?.score.undocumented_metric).toBe(1);
+    expect(sleeps.records[0]?.score.stage_summary.undocumented_stage).toBe(2);
+    expect(recoveries.records[0]?.score.undocumented_metric).toBe(3);
+  });
+
   // WHOOP's percent_recorded is a 0–1 fraction. Reject a 0–100 value outright so
   // a scale change surfaces in the contract diagnostics instead of turning into
   // a silent 10000% downstream.
