@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createWhoopServer } from "../src/server.js";
@@ -758,6 +758,32 @@ describe("createWhoopServer (error handling)", () => {
       expect(result.isError).toBe(true);
       const content = result.content as Array<{ type: string; text: string }>;
       expect(content[0].text).toBe("An unexpected error occurred. Check configuration and retry.");
+    } finally {
+      await mcpClient.close();
+      await server.close();
+    }
+  });
+
+  // A tool error reaches the user only as the model's paraphrase ("the API is
+  // failing"), so the server must keep its own record of which tool failed and why.
+  it("logs a failed tool call with its tool name and message, but not a successful one", async () => {
+    const warn = vi.fn();
+    const { server } = createWhoopServer(createMockClient(), { logger: { warn } });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const mcpClient = new Client({ name: "log-test", version: "1.0.0" });
+    await Promise.all([mcpClient.connect(clientTransport), server.connect(serverTransport)]);
+
+    try {
+      await mcpClient.callTool({ name: "get_profile", arguments: {} });
+      expect(warn).not.toHaveBeenCalled();
+
+      await mcpClient.callTool({ name: "get_sleep_collection", arguments: { start: "last night" } });
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith("tool call failed", {
+        tool: "get_sleep_collection",
+        message: expect.stringContaining('Unrecognized date expression: "last night"'),
+      });
     } finally {
       await mcpClient.close();
       await server.close();

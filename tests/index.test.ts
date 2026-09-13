@@ -366,6 +366,7 @@ describe("main() entry point", () => {
       expect(mockCreateWhoopServer).toHaveBeenCalledWith(mockClient, {
         disableResources: false,
         privacyMode: "standard",
+        logger: expect.objectContaining({ warn: expect.any(Function) }),
       });
     });
 

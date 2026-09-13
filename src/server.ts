@@ -27,6 +27,7 @@ import { registerResources } from "./resources/index.js";
 import { registerPrompts } from "./prompts/index.js";
 import { ISO_8601_REGEX, InvalidDateExpression } from "./tools/date-utils.js";
 import { readFileSync } from "node:fs";
+import type { Logger } from "./logging/logger.js";
 import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { getBaselines, baselinesInputSchema } from "./tools/get-baselines.js";
 import { getSleepDebt, sleepDebtInputSchema } from "./tools/get-sleep-debt.js";
@@ -183,6 +184,8 @@ export interface CreateServerOptions {
   privacyMode?: PrivacyMode;
   /** Disable MCP resource registration (set via WHOOP_MCP_DISABLE_RESOURCES=1) */
   disableResources?: boolean;
+  /** Receives a warning for every tool call that ends in an error result. */
+  logger?: Pick<Logger, "warn">;
 }
 
 /** Return type for the configured MCP server. */
@@ -217,28 +220,41 @@ export function createWhoopServer(client: WhoopClient, options?: CreateServerOpt
       if (privacyMode === "aggregate") return;
       throw new Error("Missing tool output contract.");
     }
+    const run = async (args: unknown): Promise<CallToolResult> => {
+      const result = await handler(args as z.infer<z.ZodObject<Shape>>);
+      if (result.isError) return result;
+      const validated = schema.safeParse(result.structuredContent);
+      if (!validated.success)
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text:
+                "WHOOP data did not match the expected output contract. " +
+                describeContractIssues(validated.error),
+            },
+          ],
+        };
+      return jsonContent(
+        privacyMode === "aggregate" ? projectAggregateDates(validated.data) : validated.data
+      );
+    };
     server.registerTool(
       name,
       { ...config, inputSchema: config.inputSchema ?? z.object({}), outputSchema: schema },
       async (args) => {
-        const result = await handler(args as z.infer<z.ZodObject<Shape>>);
-        if (result.isError) return result;
-        const validated = schema.safeParse(result.structuredContent);
-        if (!validated.success)
-          return {
-            isError: true,
-            content: [
-              {
-                type: "text",
-                text:
-                  "WHOOP data did not match the expected output contract. " +
-                  describeContractIssues(validated.error),
-              },
-            ],
-          };
-        return jsonContent(
-          privacyMode === "aggregate" ? projectAggregateDates(validated.data) : validated.data
-        );
+        const result = await run(args);
+        // The user only ever sees the model's paraphrase of a failure. Error
+        // texts are the server's own wording and carry no health values.
+        if (result.isError) {
+          const first = result.content[0];
+          options?.logger?.warn("tool call failed", {
+            tool: name,
+            message: first?.type === "text" ? first.text.slice(0, 500) : "(non-text error)",
+          });
+        }
+        return result;
       }
     );
   }

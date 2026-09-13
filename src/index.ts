@@ -155,7 +155,7 @@ export async function main(): Promise<void> {
   // session rather than sharing a single instance across every client.
   const disableResources = process.env.WHOOP_MCP_DISABLE_RESOURCES === "1";
   const newMcpServer = (): McpServer =>
-    createWhoopServer(client, { disableResources, privacyMode }).server;
+    createWhoopServer(client, { disableResources, privacyMode, logger }).server;
 
   // 6. Connect transports based on MCP_TRANSPORT mode
   const httpResults: HttpServerResult[] = [];
