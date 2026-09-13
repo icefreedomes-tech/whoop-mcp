@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { stat, rm, readFile, chmod } from "node:fs/promises";
+import { stat, rm, readFile } from "node:fs/promises";
+import * as fs from "node:fs/promises";
+vi.mock("node:fs/promises", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:fs/promises")>()),
+}));
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -143,21 +147,45 @@ describe("saveTokens", () => {
   });
 
   it("creates the directory with 0700 permissions", async () => {
+    const mkdirSpy = vi.spyOn(fs, "mkdir");
     const nestedDir = join(tempDir, "nested");
     await saveTokens(sampleTokens, nestedDir);
 
     const dirStat = await stat(nestedDir);
     // 0o700 = owner rwx, group/other none. mode & 0o777 masks file type bits.
     const dirMode = dirStat.mode & 0o777;
-    expect(dirMode).toBe(0o700);
+    expect(mkdirSpy).toHaveBeenCalledWith(nestedDir, { recursive: true, mode: 0o700 });
+    if (process.platform !== "win32") expect(dirMode).toBe(0o700);
+    mkdirSpy.mockRestore();
   });
 
   it("creates the token file with 0600 permissions", async () => {
+    const writeSpy = vi.spyOn(fs, "writeFile");
     await saveTokens(sampleTokens, tempDir);
 
     const fileStat = await stat(join(tempDir, "tokens.json"));
     const fileMode = fileStat.mode & 0o777;
-    expect(fileMode).toBe(0o600);
+    expect(writeSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      expect.objectContaining({ mode: 0o600 })
+    );
+    if (process.platform !== "win32") expect(fileMode).toBe(0o600);
+    writeSpy.mockRestore();
+  });
+
+  it("preserves the old token if replacing the file fails", async () => {
+    await saveTokens(sampleTokens, tempDir);
+    const renameSpy = vi.spyOn(fs, "rename").mockRejectedValueOnce(new Error("disk unavailable"));
+    try {
+      await expect(saveTokens({ ...sampleTokens, access_token: "new" }, tempDir)).rejects.toThrow(
+        "disk unavailable"
+      );
+      expect(await loadTokens(tempDir)).toEqual(sampleTokens);
+      expect(await fs.readdir(tempDir)).toEqual(["tokens.json"]);
+    } finally {
+      renameSpy.mockRestore();
+    }
   });
 
   it("overwrites existing token file", async () => {
@@ -353,14 +381,12 @@ describe("deleteTokens", () => {
   it("rethrows non-ENOENT errors (e.g., permission denied)", async () => {
     await saveTokens(sampleTokens, tempDir);
 
-    // Make the directory non-writable so unlink fails with EACCES, not ENOENT
-    await chmod(tempDir, 0o444);
-
+    const denied = Object.assign(new Error("Permission denied"), { code: "EACCES" });
+    const unlinkSpy = vi.spyOn(fs, "unlink").mockRejectedValueOnce(denied);
     try {
-      await expect(deleteTokens(tempDir)).rejects.toThrow();
+      await expect(deleteTokens(tempDir)).rejects.toBe(denied);
     } finally {
-      // Restore permissions so afterEach cleanup works
-      await chmod(tempDir, 0o755);
+      unlinkSpy.mockRestore();
     }
   });
 });

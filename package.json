@@ -22,7 +22,8 @@
     "lint:fix": "eslint src/ tests/ --fix",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build"
   },
   "keywords": [
     "whoop",
@@ -50,7 +51,10 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "jose": "^6.2.2"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

@@ -64,9 +64,9 @@ function parseTransport(): TransportMode {
 }
 
 function parsePort(): number {
-  const raw = process.env.MCP_PORT ?? "3000";
-  const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n) || n < 0 || n > 65535) {
+  const raw = process.env.PORT ?? process.env.MCP_PORT ?? "3000";
+  const n = /^\d+$/.test(raw) ? Number(raw) : NaN;
+  if (!Number.isInteger(n) || n < 0 || n > 65535) {
     throw new Error(`Invalid MCP_PORT: "${raw}". Must be an integer 0-65535.`);
   }
   return n;
@@ -191,6 +191,8 @@ export async function main(): Promise<void> {
           res: import("node:http").ServerResponse
         ) => void)
       | undefined;
+    let validateBearerToken: ((token: string) => Promise<boolean>) | undefined;
+    let resourceMetadataUrl: string | undefined;
     const connectorPassword = process.env.MCP_CONNECTOR_PASSWORD;
     const publicUrl = process.env.PUBLIC_URL;
     const allowedRedirectUris = process.env.ALLOWED_REDIRECT_URIS;
@@ -221,6 +223,13 @@ export async function main(): Promise<void> {
         res: import("node:http").ServerResponse
       ) => void;
       oauthCloseFn = oauthApp.close;
+      const { createBearerValidator } = await import("./transport/bearer-auth.js");
+      validateBearerToken = createBearerValidator(
+        authToken,
+        oauthApp.provider,
+        new URL("/mcp", publicUrl)
+      );
+      resourceMetadataUrl = new URL("/.well-known/oauth-protected-resource/mcp", publicUrl).href;
       logger.info("oauth connector mounted", { publicUrl });
     }
 
@@ -233,6 +242,8 @@ export async function main(): Promise<void> {
       trustProxy,
       healthCheck,
       oauthHandler,
+      validateBearerToken,
+      resourceMetadataUrl,
       logger,
     });
     httpResults.push(httpResult);

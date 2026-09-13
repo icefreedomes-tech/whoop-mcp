@@ -105,6 +105,7 @@ describe("main() entry point", () => {
     // Reset transport-related env vars so tests start from a clean slate
     delete process.env.MCP_TRANSPORT;
     delete process.env.MCP_PORT;
+    delete process.env.PORT;
     delete process.env.MCP_AUTH_TOKEN;
     delete process.env.MCP_HOST;
     delete process.env.MCP_ALLOWED_ORIGINS;
@@ -550,10 +551,10 @@ describe("main() entry point", () => {
       await expect(main()).rejects.toThrow(/MCP_AUTH_TOKEN/);
     });
 
-    it("throws on non-numeric MCP_PORT", async () => {
+    it.each(["abc", "3000oops", "3000.5", ""])("throws on malformed MCP_PORT %s", async (value) => {
       process.env.MCP_TRANSPORT = "http";
       process.env.MCP_AUTH_TOKEN = "tok";
-      process.env.MCP_PORT = "abc";
+      process.env.MCP_PORT = value;
       setupHappyPath();
 
       const { main } = await importMain();

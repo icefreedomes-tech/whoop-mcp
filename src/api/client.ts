@@ -167,6 +167,7 @@ export function createWhoopClient(options: WhoopClientOptions): WhoopClient {
   const logger = options.logger;
   const requestId = options.requestId;
   const cache = options.cache;
+  let accessToken = options.accessToken;
 
   function logExtras(extra: Record<string, unknown>): Record<string, unknown> {
     return requestId !== undefined ? { requestId, ...extra } : extra;
@@ -179,6 +180,7 @@ export function createWhoopClient(options: WhoopClientOptions): WhoopClient {
   function refreshOnce(refresh: () => Promise<string>, url: string): Promise<string> {
     refreshInFlight ??= refresh()
       .then((token) => {
+        accessToken = token;
         logger?.info("whoop token refreshed", logExtras({ url }));
         return token;
       })
@@ -261,18 +263,10 @@ export function createWhoopClient(options: WhoopClientOptions): WhoopClient {
 
   async function doGet<T>(path: string): Promise<T> {
     const url = `${baseUrl}${path}`;
-    let currentToken = options.accessToken;
-    let lastError: WhoopApiError | undefined;
-    let lastResponse: Response | undefined;
-
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      // Wait before retry (not before the first attempt)
-      if (attempt > 0 && lastResponse) {
-        const retryDelay =
-          parseRetryAfter(lastResponse) ?? BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1);
-        await delay(retryDelay);
-      }
-
+    let attempt = 0;
+    let refreshed = false;
+    for (;;) {
+      const currentToken = accessToken;
       const response = await doFetch(url, currentToken);
 
       if (response.ok) {
@@ -283,50 +277,34 @@ export function createWhoopClient(options: WhoopClientOptions): WhoopClient {
       const apiError = new WhoopApiError(response.status, response.statusText, body);
 
       // Only retry on 429 rate limit
-      if (response.status === 429) {
+      if (response.status === 429 && attempt < MAX_RETRIES) {
         const retryAfterMs = parseRetryAfter(response);
         logger?.warn(
           "whoop api rate limited",
           logExtras({ url, attempt, retryAfterMs: retryAfterMs ?? undefined })
         );
-        lastError = apiError;
-        lastResponse = response;
+        await delay(retryAfterMs ?? BASE_RETRY_DELAY_MS * Math.pow(2, attempt));
+        attempt++;
         continue;
       }
 
       // 401: attempt token refresh once
-      if (response.status === 401 && options.onTokenRefresh) {
-        let newToken: string;
-        if (options.accessToken !== currentToken) {
-          // Another request refreshed while this one was in flight; refreshing
-          // again would burn the new refresh token for nothing.
-          newToken = options.accessToken;
-        } else {
+      if (response.status === 401 && options.onTokenRefresh && !refreshed) {
+        refreshed = true;
+        // A delayed 401 may belong to a token another request already replaced.
+        if (accessToken === currentToken) {
           try {
-            newToken = await refreshOnce(options.onTokenRefresh, url);
+            await refreshOnce(options.onTokenRefresh, url);
           } catch (refreshError: unknown) {
             throw new WhoopAuthError(refreshError);
           }
         }
 
-        // Retry with the new token
-        options.accessToken = newToken;
-        currentToken = newToken;
-        const retryResponse = await doFetch(url, newToken);
-        if (retryResponse.ok) {
-          return (await retryResponse.json()) as T;
-        }
-
-        // Retry also failed — throw the original error
-        const retryBody = await parseErrorBody(retryResponse);
-        throw new WhoopApiError(retryResponse.status, retryResponse.statusText, retryBody);
+        continue;
       }
 
       // All other errors: throw immediately
       throw apiError;
     }
-
-    // All retries exhausted
-    throw lastError!;
   }
 }

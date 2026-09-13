@@ -723,6 +723,7 @@ describe("createOAuthApp (integration)", () => {
       const csp = res.headers.get("content-security-policy") ?? "";
       expect(csp).toContain("frame-ancestors 'none'");
       expect(csp).toContain("default-src 'none'");
+      expect(csp).toContain("form-action 'self' https://claude.ai");
       expect(res.headers.get("referrer-policy")).toBe("no-referrer");
       expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     } finally {

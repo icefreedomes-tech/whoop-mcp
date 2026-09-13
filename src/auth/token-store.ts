@@ -5,7 +5,8 @@
  * Pure I/O module — no dependencies on API client or OAuth flow.
  */
 
-import { mkdir, writeFile, readFile, unlink } from "node:fs/promises";
+import { mkdir, writeFile, readFile, unlink, rename } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -59,7 +60,7 @@ function redactHomePath(filePath: string): string {
  * Returns `true` if `expires_at <= Date.now() + EXPIRY_BUFFER_MS`.
  */
 export function isTokenExpired(tokens: OAuthTokens): boolean {
-  return tokens.expires_at <= Date.now() + EXPIRY_BUFFER_MS;
+  return !Number.isFinite(tokens.expires_at) || tokens.expires_at <= Date.now() + EXPIRY_BUFFER_MS;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,16 +75,24 @@ function tokenFilePath(tokenDir?: string): string {
 /**
  * Save tokens to disk.
  *
- * Creates the token directory (0700) if it doesn't exist, then writes
- * the token file with 0600 (user-only read/write) permissions.
+ * Creates the token directory (0700), writes a private temporary file (0600),
+ * then atomically replaces the token file without changing the storage format.
  */
 export async function saveTokens(tokens: OAuthTokens, tokenDir?: string): Promise<void> {
   const dir = tokenDir ?? DEFAULT_TOKEN_DIR;
   await mkdir(dir, { recursive: true, mode: 0o700 });
-  await writeFile(tokenFilePath(tokenDir), JSON.stringify(tokens, null, 2), {
-    encoding: "utf-8",
-    mode: 0o600,
-  });
+  const target = tokenFilePath(tokenDir);
+  const temporary = `${target}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, JSON.stringify(tokens, null, 2), {
+      encoding: "utf-8",
+      mode: 0o600,
+      flag: "wx",
+    });
+    await rename(temporary, target);
+  } finally {
+    await unlink(temporary).catch(() => {});
+  }
 }
 
 /**
@@ -99,7 +108,8 @@ function isValidTokenShape(data: unknown): data is OAuthTokens {
     record.access_token.length > 0 &&
     typeof record.refresh_token === "string" &&
     record.refresh_token.length > 0 &&
-    typeof record.expires_at === "number"
+    typeof record.expires_at === "number" &&
+    Number.isFinite(record.expires_at)
   );
 }
 

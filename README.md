@@ -999,3 +999,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow, coding conventi
 ## License
 
 [MIT](LICENSE)
+
+## Refactor validation
+
+Run `npm run check` for type checking, lint, tests and a production build.
+HTTP bearer validation is shared by ordinary requests and SSE revalidation.
+OAuth access JWTs and the configured static token are accepted; a token bound
+to another resource is rejected. `PORT` takes precedence over `MCP_PORT` on Railway.
+Sessions are limited to 128 and idle sessions expire after 30 minutes, with cleanup
+on the next MCP request. Token file location and format remain unchanged.

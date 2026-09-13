@@ -429,13 +429,13 @@ function renderPasswordPage(params: Record<string, string>, error?: string): str
 }
 
 /** Apply anti-clickjacking + tight CSP headers to the password-prompt response. */
-function applyAuthorizePageHeaders(res: Response): void {
+function applyAuthorizePageHeaders(res: Response, redirectOrigins: string[]): void {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+    `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${redirectOrigins.join(" ")}; frame-ancestors 'none'; base-uri 'none'`
   );
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -488,6 +488,9 @@ export function createOAuthApp(options: CreateOAuthAppOptions): CreateOAuthAppRe
   // Startup validation — fail fast on misconfiguration
   validateConnectorPassword(options.connectorPassword);
   const publicUrl = validatePublicUrl(options.publicUrl);
+  const redirectOrigins = [
+    ...new Set(options.allowedRedirectUris.map((uri) => new URL(uri).origin)),
+  ];
 
   const provider =
     options.provider ??
@@ -528,7 +531,7 @@ export function createOAuthApp(options: CreateOAuthAppOptions): CreateOAuthAppRe
       const v = req.query[k];
       if (typeof v === "string") params[k] = v;
     }
-    applyAuthorizePageHeaders(res);
+    applyAuthorizePageHeaders(res, redirectOrigins);
     res.status(200).send(renderPasswordPage(params));
   });
 
@@ -538,7 +541,7 @@ export function createOAuthApp(options: CreateOAuthAppOptions): CreateOAuthAppRe
     authorizeLimiter,
     formParser,
     (req: Request, res: Response, next: NextFunction) => {
-      const body = req.body as Record<string, unknown>;
+      const body = (req.body ?? {}) as Record<string, unknown>;
       const provided = typeof body.connector_password === "string" ? body.connector_password : "";
 
       if (!comparePassword(provided, options.connectorPassword)) {
@@ -547,7 +550,7 @@ export function createOAuthApp(options: CreateOAuthAppOptions): CreateOAuthAppRe
           const v = body[k];
           if (typeof v === "string") params[k] = v;
         }
-        applyAuthorizePageHeaders(res);
+        applyAuthorizePageHeaders(res, redirectOrigins);
         res.status(401).send(renderPasswordPage(params, "Incorrect password. Try again."));
         return;
       }

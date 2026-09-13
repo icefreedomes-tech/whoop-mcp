@@ -8,7 +8,7 @@
  * to ISO 8601 before sending to the WHOOP API.
  */
 
-import { resolveDateExpression, InvalidDateExpression } from "./date-utils.js";
+import { resolveDateExpression } from "./date-utils.js";
 
 /** Input params shared by all collection endpoints */
 export interface CollectionParams {
@@ -16,42 +16,6 @@ export interface CollectionParams {
   end?: string;
   limit?: number;
   nextToken?: string;
-}
-
-/**
- * Resolve a date expression to an ISO 8601 start value.
- * If already ISO 8601, passes through unchanged.
- * Returns undefined if input is undefined.
- */
-function resolveStart(value: string | undefined): string | undefined {
-  if (value === undefined) return undefined;
-  try {
-    const resolved = resolveDateExpression(value);
-    return resolved.start;
-  } catch (e) {
-    if (e instanceof InvalidDateExpression) {
-      throw e;
-    }
-    return value;
-  }
-}
-
-/**
- * Resolve a date expression to an ISO 8601 end value.
- * If already ISO 8601, passes through unchanged.
- * Returns undefined if input is undefined.
- */
-function resolveEnd(value: string | undefined): string | undefined {
-  if (value === undefined) return undefined;
-  try {
-    const resolved = resolveDateExpression(value);
-    return resolved.end;
-  } catch (e) {
-    if (e instanceof InvalidDateExpression) {
-      throw e;
-    }
-    return value;
-  }
 }
 
 /**
@@ -65,8 +29,10 @@ function resolveEnd(value: string | undefined): string | undefined {
 export function buildCollectionQuery(params: CollectionParams): string {
   const searchParams = new URLSearchParams();
 
-  const start = resolveStart(params.start);
-  const end = resolveEnd(params.end);
+  const now = new Date();
+  const start =
+    params.start === undefined ? undefined : resolveDateExpression(params.start, now).start;
+  const end = params.end === undefined ? undefined : resolveDateExpression(params.end, now).end;
 
   if (start !== undefined) {
     searchParams.set("start", start);

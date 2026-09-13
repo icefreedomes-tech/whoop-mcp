@@ -8,10 +8,9 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
-import { createHash, timingSafeEqual } from "node:crypto";
-import { randomUUID } from "node:crypto";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { safeTokenCompare } from "./bearer-auth.js";
+export { safeTokenCompare } from "./bearer-auth.js";
+import { createMcpSessions, type SessionOptions } from "./mcp-sessions.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Logger } from "../logging/logger.js";
 
@@ -19,7 +18,7 @@ import type { Logger } from "../logging/logger.js";
 // Types
 // ---------------------------------------------------------------------------
 
-export interface HttpServerOptions {
+export interface HttpServerOptions extends SessionOptions {
   /**
    * Factory producing a fresh MCP server for each new session. One server
    * instance may only be connected to one transport, so a remote deployment
@@ -62,12 +61,10 @@ export interface HttpServerOptions {
    * are terminated. Set to 0 to disable.
    */
   sseReauthIntervalMs?: number;
-  /**
-   * Optional bearer-token validator used by the SSE re-auth sweep. Defaults
-   * to a static comparison against `authToken` (never expires). Override to
-   * plug in OAuth JWT expiry checks.
-   */
-  validateBearerToken?: (token: string) => boolean;
+  /** Complete auth policy for requests and SSE revalidation; defaults to the static token. */
+  validateBearerToken?: (token: string) => boolean | Promise<boolean>;
+  /** OAuth discovery URL advertised when authentication is required. */
+  resourceMetadataUrl?: string;
   /**
    * Receives a warning for every /mcp request from an authenticated client that
    * is answered with a 4xx or 5xx status.
@@ -92,24 +89,6 @@ export interface HealthResponse {
 }
 
 // ---------------------------------------------------------------------------
-// safeTokenCompare — SHA-256 hash comparison (no length oracle)
-// ---------------------------------------------------------------------------
-
-/**
- * Compare two tokens using SHA-256 hashing + timing-safe comparison.
- * Hashing first ensures constant-time comparison regardless of token length.
- * Returns false for empty strings (avoids vacuous truth).
- */
-export function safeTokenCompare(provided: string, expected: string): boolean {
-  if (!provided || !expected) {
-    return false;
-  }
-  const providedHash = createHash("sha256").update(provided).digest();
-  const expectedHash = createHash("sha256").update(expected).digest();
-  return timingSafeEqual(providedHash, expectedHash);
-}
-
-// ---------------------------------------------------------------------------
 // Auth helpers
 // ---------------------------------------------------------------------------
 
@@ -117,7 +96,7 @@ function extractBearerToken(req: IncomingMessage): string | null {
   const authHeader = req.headers.authorization;
   if (!authHeader) return null;
   const parts = authHeader.split(" ");
-  if (parts.length !== 2 || parts[0] !== "Bearer") return null;
+  if (parts.length !== 2 || parts[0]?.toLowerCase() !== "bearer") return null;
   return parts[1] ?? null;
 }
 
@@ -130,9 +109,13 @@ function handleCors(req: IncomingMessage, res: ServerResponse, allowedOrigins: s
 
   if (origin && allowedOrigins.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, Mcp-Session-Id");
-    res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Authorization, Content-Type, Mcp-Session-Id, Mcp-Protocol-Version"
+    );
+    res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id, WWW-Authenticate");
     res.setHeader("Access-Control-Max-Age", "86400");
   }
 
@@ -228,6 +211,17 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
     logger,
   } = options;
 
+  async function isAuthorized(token: string | null): Promise<boolean> {
+    if (!token) return false;
+    try {
+      return validateBearerToken
+        ? await validateBearerToken(token)
+        : safeTokenCompare(token, authToken);
+    } catch {
+      return false;
+    }
+  }
+
   if (!authToken) {
     throw new Error(
       "MCP_AUTH_TOKEN is required when MCP_TRANSPORT=http or MCP_TRANSPORT=both. " +
@@ -241,9 +235,16 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
 
   // Per-IP fixed-window rate limiter for /mcp (no extra deps).
   const mcpRateBuckets = new Map<string, { count: number; resetAt: number }>();
+  let nextBucketSweep = 0;
   function checkMcpRateLimit(ip: string): boolean {
     if (mcpRateLimit.max <= 0 || mcpRateLimit.windowMs <= 0) return true;
     const now = Date.now();
+    if (now >= nextBucketSweep) {
+      for (const [key, entry] of mcpRateBuckets) {
+        if (entry.resetAt <= now) mcpRateBuckets.delete(key);
+      }
+      nextBucketSweep = now + mcpRateLimit.windowMs;
+    }
     const bucket = mcpRateBuckets.get(ip);
     if (!bucket || bucket.resetAt <= now) {
       mcpRateBuckets.set(ip, { count: 1, resetAt: now + mcpRateLimit.windowMs });
@@ -258,8 +259,8 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
     if (trustProxy) {
       const xff = req.headers["x-forwarded-for"];
       if (typeof xff === "string" && xff.length > 0) {
-        const first = xff.split(",")[0]?.trim();
-        if (first) return first;
+        const nearest = xff.split(",").at(-1)?.trim();
+        if (nearest) return nearest;
       }
     }
     return req.socket.remoteAddress ?? "unknown";
@@ -270,26 +271,19 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
   let sseTimer: NodeJS.Timeout | null = null;
   if (sseReauthIntervalMs > 0) {
     sseTimer = setInterval(() => {
-      const validate =
-        validateBearerToken ?? ((t: string): boolean => safeTokenCompare(t, authToken));
       for (const c of sseConnections) {
-        if (!validate(c.token)) {
-          c.res.end();
-          sseConnections.delete(c);
-        }
+        void isAuthorized(c.token).then((valid) => {
+          if (!valid) {
+            c.res.end();
+            sseConnections.delete(c);
+          }
+        });
       }
     }, sseReauthIntervalMs);
     sseTimer.unref();
   }
 
-  // One transport and one MCP server per session. A single process-wide
-  // transport can only ever hold one session, so whichever client initializes
-  // first claims it and every other client is rejected — and claude.ai is two
-  // clients against the same deployment (its backend plus the browser).
-  const sessions = new Map<
-    string,
-    { transport: StreamableHTTPServerTransport; mcpServer: McpServer }
-  >();
+  const sessions = createMcpSessions(createMcpServer, options);
 
   function sessionIdOf(req: IncomingMessage): string | undefined {
     const raw = req.headers["mcp-session-id"];
@@ -298,36 +292,9 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
     return undefined;
   }
 
-  function sendJsonRpcError(res: ServerResponse, status: number, message: string): void {
-    sendJson(res, status, { jsonrpc: "2.0", error: { code: -32000, message }, id: null });
-  }
-
-  async function openSession(
-    req: IncomingMessage,
-    res: ServerResponse,
-    parsedBody: unknown
-  ): Promise<void> {
-    const mcpServer = createMcpServer();
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
-      onsessioninitialized: (sessionId: string) => {
-        sessions.set(sessionId, { transport, mcpServer });
-      },
-    });
-
-    transport.onclose = (): void => {
-      const sessionId = transport.sessionId;
-      if (sessionId) sessions.delete(sessionId);
-      void mcpServer.close().catch(() => {});
-    };
-
-    await mcpServer.connect(transport);
-    await transport.handleRequest(req, res, parsedBody);
-  }
-
   // Create HTTP server
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    const url = new URL(req.url ?? "/", "http://localhost");
     const pathname = url.pathname;
 
     // CORS handling
@@ -338,7 +305,7 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
     // Route: /health
     if (pathname === "/health") {
       const token = extractBearerToken(req);
-      const isAuthed = token !== null && safeTokenCompare(token, authToken);
+      const isAuthed = await isAuthorized(token);
 
       const health: HealthResponse = { status: "ok" };
       if (isAuthed) {
@@ -373,7 +340,13 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
     if (pathname === "/mcp") {
       // Auth check
       const token = extractBearerToken(req);
-      if (!token || !safeTokenCompare(token, authToken)) {
+      if (!token || !(await isAuthorized(token))) {
+        if (options.resourceMetadataUrl) {
+          res.setHeader(
+            "WWW-Authenticate",
+            `Bearer resource_metadata="${options.resourceMetadataUrl}"`
+          );
+        }
         sendJson(res, 401, { error: "Unauthorized" });
         return;
       }
@@ -442,31 +415,11 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
 
       // Route to the session named by the header, or open one on initialize
       try {
-        const sessionId = sessionIdOf(req);
-        if (sessionId) {
-          const session = sessions.get(sessionId);
-          if (!session) {
-            // The spec requires 404 here: it is the only status on which a client
-            // must re-initialize. Sessions live in memory, so every restart or
-            // redeploy orphans them — a 400 left clients stuck until reconnected.
-            sendJsonRpcError(res, 404, "Unknown or expired MCP session.");
-            return;
-          }
-          await session.transport.handleRequest(req, res, parsedBody);
-        } else if (req.method === "POST" && isInitializeRequest(parsedBody)) {
-          await openSession(req, res, parsedBody);
-        } else {
-          sendJsonRpcError(
-            res,
-            400,
-            "Missing Mcp-Session-Id header. Send an initialize request first."
-          );
-        }
-      } catch (error: unknown) {
+        await sessions.handle(req, res, parsedBody);
+      } catch {
         // If response hasn't been sent yet
         if (!res.headersSent) {
-          const message = error instanceof Error ? error.message : "Internal server error";
-          sendJson(res, 500, { error: "Internal Server Error", message });
+          sendJson(res, 500, { error: "Internal Server Error", message: "Internal server error" });
         }
       }
       return;
@@ -477,10 +430,15 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
   });
 
   // Start listening
-  await new Promise<void>((resolve) => {
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
     server.listen(port, host, () => {
+      server.removeListener("error", reject);
       resolve();
     });
+  }).catch((error: unknown) => {
+    if (sseTimer) clearInterval(sseTimer);
+    throw error;
   });
 
   // Graceful shutdown
@@ -489,10 +447,7 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
       clearInterval(sseTimer);
       sseTimer = null;
     }
-    for (const session of [...sessions.values()]) {
-      await session.transport.close().catch(() => {});
-    }
-    sessions.clear();
+    await sessions.close();
     await new Promise<void>((resolve, reject) => {
       server.close((err) => {
         if (err) reject(err);
@@ -501,5 +456,5 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
     });
   };
 
-  return { server, sessionCount: () => sessions.size, close };
+  return { server, sessionCount: sessions.size, close };
 }

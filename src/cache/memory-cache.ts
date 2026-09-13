@@ -155,12 +155,11 @@ export class MemoryCache<T = unknown> {
         if (this.generation === gen) {
           this.set(key, data as unknown as T, ttlMs);
         }
-        this.inflight.delete(key);
         return data;
       })
-      .catch((error: unknown) => {
-        this.inflight.delete(key);
-        throw error;
+      .finally(() => {
+        // A clear() may already have installed a newer request for this key.
+        if (this.inflight.get(key) === promise) this.inflight.delete(key);
       });
 
     this.inflight.set(key, promise);

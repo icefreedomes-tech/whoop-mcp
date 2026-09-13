@@ -163,7 +163,12 @@ export function resolveDateExpression(expression: string, now: Date = new Date()
   // ISO 8601 date-time: complete omitted seconds, default the offset to UTC
   const dateTime = trimmed.match(ISO_DATE_TIME_REGEX);
   if (dateTime?.[1]) {
+    // Date.parse normalizes February 30, so validate the calendar portion too.
+    resolveDateExpression(dateTime[1].slice(0, 10), now);
     const full = `${dateTime[1]}${dateTime[2] ?? ":00"}${dateTime[3] ?? "Z"}`;
+    if (Number(dateTime[1].slice(11, 13)) > 23 || !Number.isFinite(Date.parse(full))) {
+      throw new InvalidDateExpression(`Invalid date-time: "${trimmed}".`);
+    }
     return { start: full, end: full };
   }
 

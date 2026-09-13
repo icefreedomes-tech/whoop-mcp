@@ -14,6 +14,10 @@ import { createHttpServer, type HttpServerResult } from "../../src/transport/htt
 import { createWhoopClient } from "../../src/api/client.js";
 import { createWhoopServer } from "../../src/server.js";
 import type { UserProfile } from "../../src/api/types.js";
+import { createBearerValidator } from "../../src/transport/bearer-auth.js";
+import { createOAuthApp } from "../../src/transport/oauth-connector.js";
+import { signToken } from "../../src/transport/oauth-jwt.js";
+import { createHash } from "node:crypto";
 
 const AUTH_TOKEN = "integration-test-token-1234567890abcdef";
 
@@ -96,5 +100,96 @@ describe("HTTP transport — MCP integration", () => {
     expect(content[0]?.type).toBe("text");
     const payload = JSON.parse(content[0]?.text ?? "{}") as UserProfile;
     expect(payload).toEqual(PROFILE_FIXTURE);
+  });
+
+  it("accepts connector-issued JWTs through the HTTP transport", async () => {
+    const secret = new TextEncoder().encode("a".repeat(32));
+    const oauth = createOAuthApp({
+      connectorPassword: "a-long-test-password",
+      publicUrl: "https://whoop.example",
+      allowedRedirectUris: ["https://claude.ai/cb"],
+      jwtSecret: secret,
+      scopes: ["mcp"],
+      client: { clientId: "test", clientName: "test", redirectUris: ["https://claude.ai/cb"] },
+    });
+    try {
+      httpResult = await createHttpServer({
+        createMcpServer: () =>
+          createWhoopServer(createWhoopClient({ accessToken: "upstream" })).server,
+        authToken: AUTH_TOKEN,
+        port: 0,
+        host: "127.0.0.1",
+        sseReauthIntervalMs: 0,
+        validateBearerToken: createBearerValidator(
+          AUTH_TOKEN,
+          oauth.provider,
+          new URL("https://whoop.example/mcp")
+        ),
+        oauthHandler: oauth.app,
+        resourceMetadataUrl: "https://whoop.example/.well-known/oauth-protected-resource/mcp",
+      });
+      const base = getServerUrl(httpResult).origin;
+      const unauthenticated = await fetch(`${base}/mcp`);
+      expect(unauthenticated.status).toBe(401);
+      expect(unauthenticated.headers.get("www-authenticate")).toContain("resource_metadata=");
+      await unauthenticated.text();
+      const verifier = "a".repeat(43);
+      const authorized = await fetch(`${base}/authorize`, {
+        method: "POST",
+        redirect: "manual",
+        body: new URLSearchParams({
+          client_id: "test",
+          redirect_uri: "https://claude.ai/cb",
+          response_type: "code",
+          scope: "mcp",
+          code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+          code_challenge_method: "S256",
+          connector_password: "a-long-test-password",
+          resource: "https://whoop.example/mcp",
+        }),
+      });
+      expect(authorized.status).toBe(302);
+      const code = new URL(authorized.headers.get("location")!).searchParams.get("code")!;
+      await authorized.text();
+      const exchanged = await fetch(`${base}/token`, {
+        method: "POST",
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          client_id: "test",
+          code,
+          code_verifier: verifier,
+          redirect_uri: "https://claude.ai/cb",
+          resource: "https://whoop.example/mcp",
+        }),
+      });
+      expect(exchanged.status).toBe(200);
+      const { access_token: jwt } = (await exchanged.json()) as { access_token: string };
+      client = new Client({ name: "oauth-integration", version: "1" });
+      await client.connect(
+        new StreamableHTTPClientTransport(getServerUrl(httpResult), {
+          requestInit: { headers: { Authorization: `Bearer ${jwt}` } },
+        })
+      );
+      expect((await client.callTool({ name: "get_profile", arguments: {} })).isError).not.toBe(
+        true
+      );
+      const wrongResource = await signToken(
+        {
+          clientId: "test",
+          scopes: ["mcp"],
+          type: "access",
+          ttlSeconds: 60,
+          resource: "https://other.example/mcp",
+        },
+        secret
+      );
+      const rejected = await fetch(`${base}/mcp`, {
+        headers: { Authorization: `Bearer ${wrongResource}` },
+      });
+      expect(rejected.status).toBe(401);
+      await rejected.text();
+    } finally {
+      oauth.close();
+    }
   });
 });
