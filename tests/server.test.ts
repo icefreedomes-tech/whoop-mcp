@@ -780,9 +780,11 @@ describe("createWhoopServer (error handling)", () => {
       await mcpClient.callTool({ name: "get_sleep_collection", arguments: { start: "last night" } });
 
       expect(warn).toHaveBeenCalledTimes(1);
+      // Keyed `error`, not `message`: Railway treats a JSON log's `message` as
+      // the line itself and drops it from the attributes.
       expect(warn).toHaveBeenCalledWith("tool call failed", {
         tool: "get_sleep_collection",
-        message: expect.stringContaining('Unrecognized date expression: "last night"'),
+        error: expect.stringContaining('Unrecognized date expression: "last night"'),
       });
     } finally {
       await mcpClient.close();

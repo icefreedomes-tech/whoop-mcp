@@ -251,7 +251,7 @@ export function createWhoopServer(client: WhoopClient, options?: CreateServerOpt
           const first = result.content[0];
           options?.logger?.warn("tool call failed", {
             tool: name,
-            message: first?.type === "text" ? first.text.slice(0, 500) : "(non-text error)",
+            error: first?.type === "text" ? first.text.slice(0, 500) : "(non-text error)",
           });
         }
         return result;
