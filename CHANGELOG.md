@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `WHOOP_REDIRECT_URI` is now honoured, and `CALLBACK_HOST` / `CALLBACK_TIMEOUT_MS` configure the first-run OAuth callback, so authorization can complete behind a cloud proxy.
 - A broken output contract names the mismatched fields — paths and type messages only, never values — instead of a bare "did not match" error.
+- Warnings are logged for every rejected `/mcp` request from an authenticated client (status, JSON-RPC method, session and protocol-version metadata) and for every tool call that ends in an error (tool name and error text). Params, results and health values are never logged.
 
 ### Changed
 - **Breaking (library use):** `createHttpServer` requires a `createMcpServer` factory, and `HttpServerResult.transport` is replaced by `sessionCount()`.
@@ -22,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Collections whose last page carries `next_token: null` are handled: `get_baselines` and `get_sleep_debt` no longer mark every source invalid, the collection tools no longer fail on their last page, and pagination no longer reports false truncation.
 - Workouts with null `distance_meter` and altitude fields (e.g. strength training) are no longer rejected.
 - Workout `percent_recorded` is treated as the 0–1 fraction WHOOP sends; `get_today` reports it as 0–100.
+- An unrecognised date argument returns the parser's message listing the accepted forms, instead of "An unexpected error occurred", so the model can correct the call rather than report the API as failing.
+- ISO 8601 date-times given to the minute (`2026-09-13T08:30`, with or without an offset) are accepted by the collection tools and completed with seconds.
 
 ## [0.7.0] - 2026-09-10
 
