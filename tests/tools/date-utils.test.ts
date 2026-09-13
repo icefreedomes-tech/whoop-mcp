@@ -76,9 +76,7 @@ describe("resolveDateExpression", () => {
       start: "2026-09-11T00:00:00Z",
       end: "2026-09-11T00:00:00Z",
     });
-    expect(resolveDateExpression("2026-09-11T06:15:30.250").start).toBe(
-      "2026-09-11T06:15:30.250Z"
-    );
+    expect(resolveDateExpression("2026-09-11T06:15:30.250").start).toBe("2026-09-11T06:15:30.250Z");
   });
 
   it("rejects a date that is not on the calendar", () => {
@@ -99,9 +97,7 @@ describe("resolveDateExpression", () => {
       start: "2026-09-13T00:00:00Z",
       end: "2026-09-13T00:00:00Z",
     });
-    expect(resolveDateExpression("2026-09-13T08:30+02:00").start).toBe(
-      "2026-09-13T08:30:00+02:00"
-    );
+    expect(resolveDateExpression("2026-09-13T08:30+02:00").start).toBe("2026-09-13T08:30:00+02:00");
     expect(resolveDateExpression("2026-09-13T08:30Z").start).toBe("2026-09-13T08:30:00Z");
   });
 

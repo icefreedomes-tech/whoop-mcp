@@ -777,7 +777,10 @@ describe("createWhoopServer (error handling)", () => {
       await mcpClient.callTool({ name: "get_profile", arguments: {} });
       expect(warn).not.toHaveBeenCalled();
 
-      await mcpClient.callTool({ name: "get_sleep_collection", arguments: { start: "last night" } });
+      await mcpClient.callTool({
+        name: "get_sleep_collection",
+        arguments: { start: "last night" },
+      });
 
       expect(warn).toHaveBeenCalledTimes(1);
       // Keyed `error`, not `message`: Railway treats a JSON log's `message` as
