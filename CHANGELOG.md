@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates without a timezone offset are resolved before querying WHOOP, which answers 404 to them. A date (`2026-09-13`) means that whole UTC day; a date-time without an offset is UTC, and one given to the minute is completed with seconds. This affected the collection tools, `get_weekly_summary` and `compare_periods` — the last failed on the `YYYY-MM-DD` form its own schema advertises.
 - WHOOP 400/404/422 responses tell the caller to check the IDs and dates instead of "Retry later or verify authorization", which made a rejected argument read as an outage.
 - Tool-failure log entries keep their reason under `error`; Railway drops a JSON `message` key from log attributes.
+- Requests that hit 401 together share one token refresh, and a request whose 401 arrives after another request already refreshed retries with the new token. WHOOP refresh tokens are single use, so `get_today`'s four parallel requests raced four refreshes on the first call after the hourly expiry: the losers came back `fetch_failed`, and a lost race could burn the stored refresh token. Failed refreshes are now logged.
+- Undocumented fields inside score objects (recovery, sleep with its stage summary and sleep need, cycle, workout with its zone durations) are passed through instead of silently stripped.
 
 ## [0.7.0] - 2026-09-10
 
