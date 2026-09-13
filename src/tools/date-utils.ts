@@ -42,6 +42,9 @@ const MAX_LAST_N_DAYS = 365;
 export const ISO_8601_REGEX =
   /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})?)?$/;
 
+/** ISO 8601 date-time to the minute, e.g. 2026-09-13T08:30 or 2026-09-13T08:30+02:00 */
+const ISO_WITHOUT_SECONDS_REGEX = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(Z|[+-]\d{2}:\d{2})?$/;
+
 /** Regex for "last N days" expressions */
 const LAST_N_DAYS_REGEX = /^last\s+(\d+)\s+days?$/i;
 
@@ -138,6 +141,13 @@ export function resolveDateExpression(expression: string, now: Date = new Date()
   // ISO 8601 pass-through
   if (ISO_8601_REGEX.test(trimmed)) {
     return { start: trimmed, end: trimmed };
+  }
+
+  // ISO 8601 allows omitting seconds; complete them so WHOOP gets a full time.
+  const withoutSeconds = trimmed.match(ISO_WITHOUT_SECONDS_REGEX);
+  if (withoutSeconds?.[1]) {
+    const completed = `${withoutSeconds[1]}:00${withoutSeconds[2] ?? ""}`;
+    return { start: completed, end: completed };
   }
 
   const lower = trimmed.toLowerCase();

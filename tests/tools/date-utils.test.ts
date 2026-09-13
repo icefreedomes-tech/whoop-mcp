@@ -73,6 +73,24 @@ describe("resolveDateExpression", () => {
     expect(result).toEqual({ start: iso, end: iso });
   });
 
+  // Regression: models write times to the minute. ISO 8601 allows omitting
+  // seconds and the tools promise ISO 8601, yet the call failed before it
+  // ever reached WHOOP.
+  it("accepts an ISO 8601 date-time without seconds and completes it", () => {
+    expect(resolveDateExpression("2026-09-13T00:00")).toEqual({
+      start: "2026-09-13T00:00:00",
+      end: "2026-09-13T00:00:00",
+    });
+    expect(resolveDateExpression("2026-09-13T08:30+02:00").start).toBe(
+      "2026-09-13T08:30:00+02:00"
+    );
+    expect(resolveDateExpression("2026-09-13T08:30Z").start).toBe("2026-09-13T08:30:00Z");
+  });
+
+  it("still rejects a date-time with only an hour", () => {
+    expect(() => resolveDateExpression("2026-09-13T08")).toThrow(InvalidDateExpression);
+  });
+
   // -------------------------------------------------------------------------
   // "today"
   // -------------------------------------------------------------------------
