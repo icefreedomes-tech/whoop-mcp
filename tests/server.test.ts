@@ -659,6 +659,29 @@ describe("createWhoopServer (error handling)", () => {
     }
   });
 
+  // Regression: WHOOP answers a bad parameter or unknown id with 404, and the
+  // tool said "Retry later or verify authorization" — so the model reported
+  // WHOOP as down or the connection as broken.
+  it.each([400, 404, 422])(
+    "points at the arguments rather than a retry when WHOOP answers %i",
+    async (status) => {
+      const { client: errClient, cleanup } = await createErrorServer(
+        new WhoopApiError(status, "Rejected", {})
+      );
+
+      try {
+        const result = await errClient.callTool({ name: "get_profile", arguments: {} });
+
+        const text = (result.content as Array<{ type: string; text: string }>)[0].text;
+        expect(text).toContain(`WHOOP API returned ${status}`);
+        expect(text).toMatch(/check the IDs and dates/i);
+        expect(text).not.toContain("Retry later");
+      } finally {
+        await cleanup();
+      }
+    }
+  );
+
   it("returns isError with network message for WhoopNetworkError", async () => {
     const netError = new WhoopNetworkError(new TypeError("fetch failed"));
     const { client: errClient, cleanup } = await createErrorServer(netError);

@@ -145,7 +145,12 @@ function errorResponse(error: unknown): {
   let message: string;
 
   if (error instanceof WhoopApiError) {
-    message = `WHOOP API returned ${error.statusCode}. Retry later or verify authorization.`;
+    const status = error.statusCode;
+    // WHOOP answers a bad parameter or unknown id with 4xx; retrying cannot help.
+    message =
+      status === 400 || status === 404 || status === 422
+        ? `WHOOP API returned ${status}: no matching record, or WHOOP rejected the request parameters. Check the IDs and dates rather than retrying.`
+        : `WHOOP API returned ${status}. Retry later or verify authorization.`;
   } else if (error instanceof WhoopAuthError) {
     message = "WHOOP authentication failed. Run setup --verify to reconnect.";
   } else if (error instanceof WhoopNetworkError) {
