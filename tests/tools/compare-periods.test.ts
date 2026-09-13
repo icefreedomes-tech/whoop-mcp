@@ -335,6 +335,34 @@ describe("comparePeriods", () => {
     expect(getMock).toHaveBeenCalledTimes(6);
   });
 
+  // Regression: bounds reached WHOOP untouched, and WHOOP answers 404 to any
+  // date without an offset — so the tool failed on the YYYY-MM-DD form its own
+  // input schema advertises.
+  it("resolves date-only bounds to whole UTC days before querying WHOOP", async () => {
+    getMock.mockResolvedValue(paginated([]));
+
+    const result = await comparePeriods(client, {
+      period_a_start: "2026-05-01",
+      period_a_end: "2026-05-07",
+      period_b_start: "2026-05-08",
+      period_b_end: "2026-05-14",
+    });
+
+    const queries = getMock.mock.calls.map(
+      ([path]) => new URLSearchParams(String(path).split("?")[1])
+    );
+    expect(queries).toHaveLength(6);
+    for (const query of queries) {
+      expect(query.get("start")).toMatch(/Z$/);
+      expect(query.get("end")).toMatch(/Z$/);
+    }
+    expect(result.period_a).toMatchObject({
+      start: "2026-05-01T00:00:00.000Z",
+      end: "2026-05-07T23:59:59.999Z",
+    });
+    expect(result.period_a.days).toBeCloseTo(7, 0);
+  });
+
   it("accepts enhanced date expressions", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-28T12:00:00.000Z"));
