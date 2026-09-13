@@ -24,7 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workouts with null `distance_meter` and altitude fields (e.g. strength training) are no longer rejected.
 - Workout `percent_recorded` is treated as the 0–1 fraction WHOOP sends; `get_today` reports it as 0–100.
 - An unrecognised date argument returns the parser's message listing the accepted forms, instead of "An unexpected error occurred", so the model can correct the call rather than report the API as failing.
-- ISO 8601 date-times given to the minute (`2026-09-13T08:30`, with or without an offset) are accepted by the collection tools and completed with seconds.
+- Dates without a timezone offset are resolved before querying WHOOP, which answers 404 to them. A date (`2026-09-13`) means that whole UTC day; a date-time without an offset is UTC, and one given to the minute is completed with seconds. This affected the collection tools, `get_weekly_summary` and `compare_periods` — the last failed on the `YYYY-MM-DD` form its own schema advertises.
+- WHOOP 400/404/422 responses tell the caller to check the IDs and dates instead of "Retry later or verify authorization", which made a rejected argument read as an outage.
+- Tool-failure log entries keep their reason under `error`; Railway drops a JSON `message` key from log attributes.
 
 ## [0.7.0] - 2026-09-10
 
