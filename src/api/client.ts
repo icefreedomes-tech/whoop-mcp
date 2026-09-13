@@ -172,6 +172,22 @@ export function createWhoopClient(options: WhoopClientOptions): WhoopClient {
     return requestId !== undefined ? { requestId, ...extra } : extra;
   }
 
+  // WHOOP refresh tokens are single use: of two simultaneous refreshes only the
+  // first succeeds, and every refresh invalidates the access token before it.
+  // All requests that hit 401 together therefore wait on one shared refresh.
+  let refreshInFlight: Promise<string> | undefined;
+  function refreshOnce(refresh: () => Promise<string>, url: string): Promise<string> {
+    refreshInFlight ??= refresh()
+      .then((token) => {
+        logger?.info("whoop token refreshed", logExtras({ url }));
+        return token;
+      })
+      .finally(() => {
+        refreshInFlight = undefined;
+      });
+    return refreshInFlight;
+  }
+
   async function doFetch(url: string, accessToken: string): Promise<Response> {
     const startedAt = Date.now();
     try {
@@ -274,11 +290,16 @@ export function createWhoopClient(options: WhoopClientOptions): WhoopClient {
       // 401: attempt token refresh once
       if (response.status === 401 && options.onTokenRefresh) {
         let newToken: string;
-        try {
-          newToken = await options.onTokenRefresh();
-          logger?.info("whoop token refreshed", logExtras({ url }));
-        } catch (refreshError: unknown) {
-          throw new WhoopAuthError(refreshError);
+        if (options.accessToken !== currentToken) {
+          // Another request refreshed while this one was in flight; refreshing
+          // again would burn the new refresh token for nothing.
+          newToken = options.accessToken;
+        } else {
+          try {
+            newToken = await refreshOnce(options.onTokenRefresh, url);
+          } catch (refreshError: unknown) {
+            throw new WhoopAuthError(refreshError);
+          }
         }
 
         // Retry with the new token

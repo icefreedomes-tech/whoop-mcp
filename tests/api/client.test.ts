@@ -547,6 +547,75 @@ describe("createWhoopClient", () => {
       );
     });
 
+    const bearerOf = (init: RequestInit): string =>
+      (init.headers as Record<string, string>).Authorization ?? "";
+
+    // Regression: get_today fires four requests at once. On an expired token all
+    // four got 401 and each refreshed on its own. WHOOP refresh tokens are single
+    // use — a second simultaneous refresh fails — so sleep and workouts came back
+    // fetch_failed while cycle and recovery, which won the race, succeeded.
+    it("shares one token refresh across concurrent requests that hit 401", async () => {
+      const NEW_TOKEN = "refreshed_token_shared";
+      mockFetch.mockImplementation((_url: string, init: RequestInit) =>
+        Promise.resolve(
+          bearerOf(init) === `Bearer ${NEW_TOKEN}`
+            ? mockJsonResponse({ ok: true })
+            : mock401Response()
+        )
+      );
+      let releaseRefresh!: () => void;
+      const refreshGate = new Promise<void>((resolve) => (releaseRefresh = resolve));
+      const onTokenRefresh = vi.fn(async (): Promise<string> => {
+        await refreshGate;
+        return NEW_TOKEN;
+      });
+      const client = createWhoopClient({
+        accessToken: TEST_TOKEN,
+        baseUrl: TEST_BASE_URL,
+        onTokenRefresh,
+      });
+
+      const requests = [
+        "/v2/recovery",
+        "/v2/activity/sleep",
+        "/v2/cycle",
+        "/v2/activity/workout",
+      ].map((path) => client.get(path));
+      await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(4));
+      releaseRefresh();
+
+      await expect(Promise.all(requests)).resolves.toHaveLength(4);
+      expect(onTokenRefresh).toHaveBeenCalledOnce();
+    });
+
+    // A request sent with the old token can receive its 401 after another request
+    // has already refreshed. Refreshing again would burn the new refresh token
+    // and invalidate the access token the other requests are using.
+    it("retries a late 401 with the already-refreshed token instead of refreshing again", async () => {
+      const NEW_TOKEN = "refreshed_token_earlier";
+      let releaseSlow!: () => void;
+      const slowGate = new Promise<void>((resolve) => (releaseSlow = resolve));
+      mockFetch.mockImplementation(async (url: string, init: RequestInit) => {
+        if (bearerOf(init) === `Bearer ${NEW_TOKEN}`) return mockJsonResponse({ ok: true });
+        if (url.includes("/v2/cycle")) await slowGate;
+        return mock401Response();
+      });
+      const onTokenRefresh = vi.fn().mockResolvedValue(NEW_TOKEN);
+      const client = createWhoopClient({
+        accessToken: TEST_TOKEN,
+        baseUrl: TEST_BASE_URL,
+        onTokenRefresh,
+      });
+
+      const slow = client.get("/v2/cycle");
+      await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+      await client.get("/v2/recovery");
+      releaseSlow();
+
+      await expect(slow).resolves.toEqual({ ok: true });
+      expect(onTokenRefresh).toHaveBeenCalledOnce();
+    });
+
     it("throws WhoopApiError if retry after refresh also returns 401", async () => {
       mockFetch.mockResolvedValueOnce(mock401Response()).mockResolvedValueOnce(mock401Response());
       const onTokenRefresh = vi.fn().mockResolvedValue("new_token");
