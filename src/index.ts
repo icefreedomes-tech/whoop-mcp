@@ -233,6 +233,7 @@ export async function main(): Promise<void> {
       trustProxy,
       healthCheck,
       oauthHandler,
+      logger,
     });
     httpResults.push(httpResult);
 

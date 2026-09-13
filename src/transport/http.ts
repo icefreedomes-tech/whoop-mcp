@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { Logger } from "../logging/logger.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -67,6 +68,11 @@ export interface HttpServerOptions {
    * plug in OAuth JWT expiry checks.
    */
   validateBearerToken?: (token: string) => boolean;
+  /**
+   * Receives a warning for every /mcp request from an authenticated client that
+   * is answered with a 4xx or 5xx status.
+   */
+  logger?: Pick<Logger, "warn">;
 }
 
 export interface HttpServerResult {
@@ -153,6 +159,19 @@ function sendJson(res: ServerResponse, status: number, data: unknown): void {
   res.end(body);
 }
 
+/** JSON-RPC method names in a parsed body, for logging. Never params. */
+function rpcMethodsOf(body: unknown): string[] {
+  const messages = Array.isArray(body) ? body.slice(0, 10) : [body];
+  return messages.map((message) =>
+    message !== null &&
+    typeof message === "object" &&
+    "method" in message &&
+    typeof message.method === "string"
+      ? message.method.slice(0, 64)
+      : "(none)"
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Body parser (reads raw body for POST requests)
 // ---------------------------------------------------------------------------
@@ -206,6 +225,7 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
     mcpRateLimit = { windowMs: 60_000, max: 100 },
     sseReauthIntervalMs = 5 * 60 * 1000,
     validateBearerToken,
+    logger,
   } = options;
 
   if (!authToken) {
@@ -358,6 +378,29 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
         return;
       }
 
+      // Clients such as claude.ai report a rejected request as a failed tool
+      // call, and the response body is gone by the time anyone investigates.
+      // Log protocol metadata only; unauthenticated noise is skipped above.
+      let parsedBody: unknown = undefined;
+      const arrivingSessionId = sessionIdOf(req);
+      const sessionKnownOnArrival =
+        arrivingSessionId !== undefined && sessions.has(arrivingSessionId);
+      if (logger) {
+        res.on("finish", () => {
+          if (res.statusCode < 400) return;
+          const protocolVersion = req.headers["mcp-protocol-version"];
+          logger.warn("mcp request rejected", {
+            status: res.statusCode,
+            httpMethod: req.method,
+            rpcMethods: rpcMethodsOf(parsedBody),
+            sessionIdPresent: arrivingSessionId !== undefined,
+            sessionKnown: sessionKnownOnArrival,
+            protocolVersion:
+              typeof protocolVersion === "string" ? protocolVersion.slice(0, 32) : null,
+          });
+        });
+      }
+
       // Per-IP rate limit (100/min default)
       if (!checkMcpRateLimit(clientIp(req))) {
         res.setHeader("Retry-After", String(Math.ceil(mcpRateLimit.windowMs / 1000)));
@@ -386,7 +429,6 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
       });
 
       // Parse body for POST requests
-      let parsedBody: unknown = undefined;
       if (req.method === "POST") {
         try {
           const rawBody = await readBody(req);

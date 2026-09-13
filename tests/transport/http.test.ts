@@ -5,7 +5,7 @@
  * connection limiting, CORS, graceful shutdown.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import http from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
@@ -650,5 +650,76 @@ describe("HTTP Server", () => {
         ),
       ]);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rejected /mcp request logging
+// ---------------------------------------------------------------------------
+
+// Clients such as claude.ai surface a rejected /mcp request as a failed tool
+// call, and the response body is gone by the time anyone investigates. Log the
+// protocol metadata of each rejection — never params, which carry user data.
+describe("HTTP Server rejected /mcp request logging", () => {
+  let cleanup: (() => Promise<void>) | null = null;
+
+  afterEach(async () => {
+    if (cleanup) {
+      await cleanup();
+      cleanup = null;
+    }
+  });
+
+  async function startServer(): Promise<{ server: http.Server; warn: ReturnType<typeof vi.fn> }> {
+    const warn = vi.fn();
+    const result = await createHttpServer({
+      createMcpServer: () => new McpServer({ name: "test-server", version: "0.0.0" }),
+      authToken: "log-token",
+      port: 0,
+      logger: { warn },
+    });
+    cleanup = result.close;
+    return { server: result.server, warn };
+  }
+
+  it("logs the protocol metadata of a rejected request without its params", async () => {
+    const { server, warn } = await startServer();
+
+    const res = await request(server, "/mcp", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer log-token",
+        "content-type": "application/json",
+        "mcp-protocol-version": "2025-06-18",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 7,
+        method: "tools/call",
+        params: { name: "get_sleep_collection", arguments: { start: "sentinel-param-4412" } },
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledTimes(1));
+    expect(warn).toHaveBeenCalledWith("mcp request rejected", {
+      status: 400,
+      httpMethod: "POST",
+      rpcMethods: ["tools/call"],
+      sessionIdPresent: false,
+      sessionKnown: false,
+      protocolVersion: "2025-06-18",
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("sentinel-param-4412");
+  });
+
+  it("does not log unauthenticated requests", async () => {
+    const { server, warn } = await startServer();
+
+    const res = await request(server, "/mcp", { method: "POST", body: "{}" });
+
+    expect(res.status).toBe(401);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(warn).not.toHaveBeenCalled();
   });
 });
