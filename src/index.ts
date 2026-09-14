@@ -64,7 +64,10 @@ function parseTransport(): TransportMode {
 }
 
 function parsePort(): number {
-  const raw = process.env.PORT ?? process.env.MCP_PORT ?? "3000";
+  // An explicitly configured MCP_PORT wins: a platform's injected PORT is a
+  // default, and silently overriding the operator's choice leaves the server
+  // listening where nothing routes to it.
+  const raw = process.env.MCP_PORT ?? process.env.PORT ?? "3000";
   const n = /^\d+$/.test(raw) ? Number(raw) : NaN;
   if (!Number.isInteger(n) || n < 0 || n > 65535) {
     throw new Error(`Invalid MCP_PORT: "${raw}". Must be an integer 0-65535.`);

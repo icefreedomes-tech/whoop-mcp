@@ -773,7 +773,7 @@ Required env vars (HTTP mode):
 | `MCP_AUTH_TOKEN`        | **yes**  | —            | Bearer token clients must send. Generate ≥32 random bytes.  |
 | `WHOOP_CLIENT_ID`       | **yes**  | —            | From your WHOOP developer app.                              |
 | `WHOOP_CLIENT_SECRET`   | **yes**  | —            | From your WHOOP developer app.                              |
-| `MCP_PORT`              | no       | `3000`       | Listen port.                                                |
+| `MCP_PORT`              | no       | `3000`       | Listen port. Wins over a platform-injected `PORT`; must match the port your host routes to. |
 | `MCP_HOST`              | no       | `0.0.0.0`    | Listen interface.                                           |
 | `MCP_ALLOWED_ORIGINS`   | no       | (none)       | Comma-separated CORS allowlist.                             |
 | `MCP_TRUST_PROXY`       | no       | `0`          | Set `1` when behind a reverse proxy (Fly/Railway).          |
@@ -1005,6 +1005,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow, coding conventi
 Run `npm run check` for type checking, lint, tests and a production build.
 HTTP bearer validation is shared by ordinary requests and SSE revalidation.
 OAuth access JWTs and the configured static token are accepted; a token bound
-to another resource is rejected. `PORT` takes precedence over `MCP_PORT` on Railway.
+to another resource is rejected. `MCP_PORT` takes precedence over a platform's
+injected `PORT`, which is used only when `MCP_PORT` is unset.
 Sessions are limited to 128 and idle sessions expire after 30 minutes, with cleanup
 on the next MCP request. Token file location and format remain unchanged.

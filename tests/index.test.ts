@@ -493,6 +493,36 @@ describe("main() entry point", () => {
       expect(mockCreateHttpServer).toHaveBeenCalledWith(expect.objectContaining({ port: 3000 }));
     });
 
+    // Regression: PORT took precedence, so Railway's injected PORT=8080 silently
+    // overrode MCP_PORT=3000. The server listened on 8080 while the domain
+    // routed to 3000, and every request was refused upstream with a 502.
+    it("prefers an explicit MCP_PORT over a platform-injected PORT", async () => {
+      process.env.MCP_TRANSPORT = "http";
+      process.env.MCP_AUTH_TOKEN = "tok";
+      process.env.MCP_PORT = "3000";
+      process.env.PORT = "8080";
+      setupHappyPath();
+      setupHttpHappyPath();
+
+      const { main } = await importMain();
+      await main();
+
+      expect(mockCreateHttpServer).toHaveBeenCalledWith(expect.objectContaining({ port: 3000 }));
+    });
+
+    it("falls back to PORT when MCP_PORT is unset", async () => {
+      process.env.MCP_TRANSPORT = "http";
+      process.env.MCP_AUTH_TOKEN = "tok";
+      process.env.PORT = "8080";
+      setupHappyPath();
+      setupHttpHappyPath();
+
+      const { main } = await importMain();
+      await main();
+
+      expect(mockCreateHttpServer).toHaveBeenCalledWith(expect.objectContaining({ port: 8080 }));
+    });
+
     it("forwards MCP_HOST and MCP_ALLOWED_ORIGINS to the HTTP server", async () => {
       process.env.MCP_TRANSPORT = "http";
       process.env.MCP_AUTH_TOKEN = "tok";
