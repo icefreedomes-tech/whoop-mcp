@@ -443,7 +443,7 @@ export function createWhoopServer(client: WhoopClient, options?: CreateServerOpt
     "get_trend",
     {
       description:
-        "Analyze a health metric trend over time — detects direction (improving/declining/stable), variability, and anomalies using linear regression.",
+        "Analyze a health metric trend over time: direction, variability and anomalies by linear regression. Direction is improving/declining for metrics with a better direction (lower is better for resting heart rate) and rising/falling for strain; stable when there is no confident trend. Values are returned oldest first.",
       inputSchema: z.object({
         metric: z
           .enum(["recovery", "hrv", "rhr", "sleep_duration", "sleep_performance", "strain"])

@@ -255,6 +255,36 @@ describe("getTrend", () => {
     expect(result.trend.direction).toBe("improving");
   });
 
+  // Regression: any rising slope was "improving", including resting heart
+  // rate, where a rise is the worse direction.
+  it("reports a rising resting heart rate as declining", async () => {
+    const rising = [48, 50, 52, 54, 56, 58].map((rhr, index) =>
+      makeRecovery({
+        recovery_score: 60,
+        hrv: 55,
+        rhr,
+        date: `2026-05-0${index + 1}T06:00:00.000Z`,
+      })
+    );
+    getMock.mockResolvedValueOnce(paginated(rising));
+
+    const result = await getTrend(client, { metric: "rhr" });
+
+    expect(result.trend.slope).toBeGreaterThan(0);
+    expect(result.trend.direction).toBe("declining");
+  });
+
+  it("reports strain, which has no better direction, as rising or falling", async () => {
+    const rising = [6, 8, 10, 12, 14, 16].map((strain, index) =>
+      makeCycle(strain, `2026-05-0${index + 1}T06:00:00.000Z`)
+    );
+    getMock.mockResolvedValueOnce(paginated(rising));
+
+    const result = await getTrend(client, { metric: "strain" });
+
+    expect(result.trend.direction).toBe("rising");
+  });
+
   it("returns declining trend for decreasing values", async () => {
     const recoveries = [100, 90, 80, 70, 60, 50].map((s) =>
       makeRecovery({ recovery_score: s, hrv: 55, rhr: 52 })

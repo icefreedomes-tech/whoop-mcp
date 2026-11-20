@@ -44,6 +44,36 @@ export interface GetTrendParams {
 /** Confidence level based on R² */
 export type TrendConfidence = "high" | "medium" | "low";
 
+/**
+ * improving/declining for metrics with a better direction; rising/falling for
+ * metrics without one, such as strain.
+ */
+export type TrendDirection = TrendDirectionResult | "rising" | "falling";
+
+/** Whether a rise in a metric is good, bad, or neither. */
+const POLARITY: Record<TrendMetric, "higher_better" | "lower_better" | "neutral"> = {
+  recovery: "higher_better",
+  hrv: "higher_better",
+  rhr: "lower_better",
+  sleep_duration: "higher_better",
+  sleep_performance: "higher_better",
+  strain: "neutral",
+};
+
+function directionFor(metric: TrendMetric, slope: number, r2: number): TrendDirection {
+  const raw = trendDirection(slope, r2);
+  if (raw === "stable") return raw;
+  const rising = raw === "improving";
+  switch (POLARITY[metric]) {
+    case "higher_better":
+      return rising ? "improving" : "declining";
+    case "lower_better":
+      return rising ? "declining" : "improving";
+    case "neutral":
+      return rising ? "rising" : "falling";
+  }
+}
+
 /** A detected anomaly with date */
 export interface TrendAnomaly {
   date: string;
@@ -64,7 +94,7 @@ export interface TrendAnalysis {
     max: number;
   };
   trend: {
-    direction: TrendDirectionResult;
+    direction: TrendDirection;
     slope: number;
     confidence: TrendConfidence;
   };
@@ -234,7 +264,7 @@ export async function getTrend(
 
   // Compute trend
   const reg = linearRegression(values);
-  const direction = trendDirection(reg.slope, reg.r2);
+  const direction = directionFor(params.metric, reg.slope, reg.r2);
   const confidence = r2ToConfidence(reg.r2);
 
   // Detect anomalies

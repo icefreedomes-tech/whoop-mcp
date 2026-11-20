@@ -71,7 +71,11 @@ const trend = z.object({
   period,
   values: z.array(number),
   statistics: z.object({ mean: number, median: number, std_dev: number, min: number, max: number }),
-  trend: z.object({ direction, slope: number, confidence: z.enum(["high", "medium", "low"]) }),
+  trend: z.object({
+    direction: z.enum(["improving", "declining", "stable", "rising", "falling"]),
+    slope: number,
+    confidence: z.enum(["high", "medium", "low"]),
+  }),
   anomalies: z.array(z.object({ date: z.string(), value: number, deviation_from_mean: number })),
 });
 const today = z.object({
