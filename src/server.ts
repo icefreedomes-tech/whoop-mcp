@@ -20,7 +20,7 @@ import { getWorkoutById } from "./tools/get-workout-by-id.js";
 import { getCycleById } from "./tools/get-cycle-by-id.js";
 import { getWeeklySummary } from "./tools/get-weekly-summary.js";
 import { comparePeriods } from "./tools/compare-periods.js";
-import { getTrend } from "./tools/get-trend.js";
+import { getTrend, type TrendMetric } from "./tools/get-trend.js";
 import { getToday } from "./tools/get-today.js";
 import { getCalendar } from "./tools/get-calendar.js";
 import { registerResources } from "./resources/index.js";
@@ -446,7 +446,18 @@ export function createWhoopServer(client: WhoopClient, options?: CreateServerOpt
         "Analyze a health metric trend over time: direction, variability and anomalies by linear regression. Direction is improving/declining for metrics with a better direction (lower is better for resting heart rate) and rising/falling for strain; stable when there is no confident trend. Values are returned oldest first.",
       inputSchema: z.object({
         metric: z
-          .enum(["recovery", "hrv", "rhr", "sleep_duration", "sleep_performance", "strain"])
+          .enum([
+            "recovery",
+            "hrv",
+            "rhr",
+            "spo2",
+            "skin_temp",
+            "respiratory_rate",
+            "sleep_duration",
+            "sleep_performance",
+            "strain",
+            "steps",
+          ])
           .describe("The health metric to analyze."),
         days: z
           .number()
@@ -458,10 +469,7 @@ export function createWhoopServer(client: WhoopClient, options?: CreateServerOpt
       }),
       annotations: { readOnlyHint: true },
     },
-    async (args: {
-      metric: "recovery" | "hrv" | "rhr" | "sleep_duration" | "sleep_performance" | "strain";
-      days?: number;
-    }) => safeTool(() => getTrend(client, args))
+    async (args: { metric: TrendMetric; days?: number }) => safeTool(() => getTrend(client, args))
   );
 
   // -------------------------------------------------------------------------

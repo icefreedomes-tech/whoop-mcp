@@ -31,9 +31,13 @@ export type TrendMetric =
   | "recovery"
   | "hrv"
   | "rhr"
+  | "spo2"
+  | "skin_temp"
+  | "respiratory_rate"
   | "sleep_duration"
   | "sleep_performance"
-  | "strain";
+  | "strain"
+  | "steps";
 
 /** Input parameters for get_trend */
 export interface GetTrendParams {
@@ -55,9 +59,14 @@ const POLARITY: Record<TrendMetric, "higher_better" | "lower_better" | "neutral"
   recovery: "higher_better",
   hrv: "higher_better",
   rhr: "lower_better",
+  spo2: "higher_better",
+  // A shift either way from your usual skin temperature is the signal.
+  skin_temp: "neutral",
+  respiratory_rate: "lower_better",
   sleep_duration: "higher_better",
   sleep_performance: "higher_better",
   strain: "neutral",
+  steps: "higher_better",
 };
 
 function directionFor(metric: TrendMetric, slope: number, r2: number): TrendDirection {
@@ -151,15 +160,23 @@ interface MetricConfig {
 }
 
 function recoveryMetricConfig(
-  field: "recovery_score" | "hrv_rmssd_milli" | "resting_heart_rate"
+  field:
+    | "recovery_score"
+    | "hrv_rmssd_milli"
+    | "resting_heart_rate"
+    | "spo2_percentage"
+    | "skin_temp_celsius"
 ): MetricConfig {
   return {
     endpoint: ENDPOINT_RECOVERY,
     extract: (records: unknown[]) => {
       const typed = records as Recovery[];
-      const scored = typed.filter((r) => r.score_state === "SCORED" && r.score);
+      // SpO2 and skin temperature are optional on a scored recovery.
+      const scored = typed.filter(
+        (r) => r.score_state === "SCORED" && typeof r.score?.[field] === "number"
+      );
       return {
-        values: scored.map((r) => r.score![field]),
+        values: scored.map((r) => r.score![field]!),
         dates: scored.map((r) => r.created_at),
       };
     },
@@ -170,6 +187,32 @@ const METRIC_CONFIGS: Record<TrendMetric, MetricConfig> = {
   recovery: recoveryMetricConfig("recovery_score"),
   hrv: recoveryMetricConfig("hrv_rmssd_milli"),
   rhr: recoveryMetricConfig("resting_heart_rate"),
+  spo2: recoveryMetricConfig("spo2_percentage"),
+  skin_temp: recoveryMetricConfig("skin_temp_celsius"),
+  respiratory_rate: {
+    endpoint: ENDPOINT_SLEEP,
+    extract: (records: unknown[]) => {
+      const typed = records as Sleep[];
+      const scored = typed.filter(
+        (s) => s.score_state === "SCORED" && typeof s.score?.respiratory_rate === "number" && !s.nap
+      );
+      return {
+        values: scored.map((s) => s.score!.respiratory_rate!),
+        dates: scored.map((s) => s.end),
+      };
+    },
+  },
+  steps: {
+    endpoint: ENDPOINT_CYCLE,
+    extract: (records: unknown[]) => {
+      const typed = records as Cycle[];
+      const counted = typed.filter((c) => typeof c.step_count === "number");
+      return {
+        values: counted.map((c) => c.step_count!),
+        dates: counted.map((c) => c.created_at),
+      };
+    },
+  },
   sleep_duration: {
     endpoint: ENDPOINT_SLEEP,
     extract: (records: unknown[]) => {

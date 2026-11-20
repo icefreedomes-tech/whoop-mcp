@@ -285,6 +285,68 @@ describe("getTrend", () => {
     expect(result.trend.direction).toBe("rising");
   });
 
+  describe("recovery-derived and step metrics", () => {
+    const dated = (index: number): string => `2026-05-0${index + 1}T06:00:00.000Z`;
+    const recoveryWith = (index: number, spo2: number, skinTemp: number): Recovery => {
+      const base = makeRecovery({ recovery_score: 60, hrv: 55, rhr: 52, date: dated(index) });
+      return {
+        ...base,
+        score: { ...base.score!, spo2_percentage: spo2, skin_temp_celsius: skinTemp },
+      };
+    };
+
+    it("trends SpO2, skipping records without it", async () => {
+      const records = [94, 95, 96, 97, 98].map((spo2, index) => recoveryWith(index, spo2, 33.5));
+      const missing = makeRecovery({ recovery_score: 60, hrv: 55, rhr: 52, date: dated(5) });
+      delete missing.score!.spo2_percentage;
+      getMock.mockResolvedValueOnce(paginated([...records, missing]));
+
+      const result = await getTrend(client, { metric: "spo2" });
+
+      expect(result.values).toEqual([94, 95, 96, 97, 98]);
+      expect(result.trend.direction).toBe("improving");
+    });
+
+    it("trends skin temperature as rising or falling, with no better direction", async () => {
+      const records = [33, 33.3, 33.6, 33.9, 34.2].map((temp, index) =>
+        recoveryWith(index, 96, temp)
+      );
+      getMock.mockResolvedValueOnce(paginated(records));
+
+      const result = await getTrend(client, { metric: "skin_temp" });
+
+      expect(result.trend.direction).toBe("rising");
+    });
+
+    it("trends respiratory rate from main sleeps, where a rise is worse", async () => {
+      const records = [15, 15.5, 16, 16.5, 17].map((rate, index) => {
+        const sleep = makeSleep(dated(index), dated(index));
+        return { ...sleep, score: { ...sleep.score!, respiratory_rate: rate } };
+      });
+      getMock.mockResolvedValueOnce(paginated(records));
+
+      const result = await getTrend(client, { metric: "respiratory_rate" });
+
+      expect(result.values).toEqual([15, 15.5, 16, 16.5, 17]);
+      expect(result.trend.direction).toBe("declining");
+    });
+
+    it("trends steps from cycles, skipping cycles without step data", async () => {
+      const records = [4000, 6000, 8000, 10000].map((steps, index) => ({
+        ...makeCycle(10, dated(index)),
+        step_count: steps,
+      }));
+      getMock.mockResolvedValueOnce(
+        paginated([...records, { ...makeCycle(10, dated(4)), step_count: null }])
+      );
+
+      const result = await getTrend(client, { metric: "steps" });
+
+      expect(result.values).toEqual([4000, 6000, 8000, 10000]);
+      expect(result.trend.direction).toBe("improving");
+    });
+  });
+
   it("returns declining trend for decreasing values", async () => {
     const recoveries = [100, 90, 80, 70, 60, 50].map((s) =>
       makeRecovery({ recovery_score: s, hrv: 55, rhr: 52 })
