@@ -127,9 +127,15 @@ const calendar = z.object({
       sleep_hours: nullable,
       sleep_performance_pct: nullable,
       day_strain: nullable,
+      steps: nullable,
     })
   ),
-  averages: z.object({ recovery: nullable, sleep_hours: nullable, strain: nullable }),
+  averages: z.object({
+    recovery: nullable,
+    sleep_hours: nullable,
+    strain: nullable,
+    steps: nullable,
+  }),
 });
 
 export const outputSchemas: Record<string, z.ZodObject> = {

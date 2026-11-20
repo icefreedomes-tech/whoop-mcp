@@ -40,13 +40,22 @@ function duration(record: { start: string; end: string }): number {
   return Date.parse(record.end) - Date.parse(record.start);
 }
 
+/**
+ * Local day a cycle covers, from the cycle alone. A cycle starts at bedtime, so
+ * twelve hours later falls in the day you woke up, whether bedtime was before
+ * or after midnight.
+ */
+export function cycleCoveredDay(cycle: { start: string; timezone_offset: string }): string {
+  const later = new Date(Date.parse(cycle.start) + 12 * HOUR_MS).toISOString();
+  return localDay(later, cycle.timezone_offset);
+}
+
 /** Local day a cycle covers: the day you woke from its sleep. */
-export function cycleDate(cycle: CycleRecord, sleep: SleepRecord | undefined): string {
-  if (sleep) return localDay(sleep.end, sleep.timezone_offset);
-  // No sleep recorded. A cycle starts at bedtime, so half a day later falls in
-  // the day it covers, whether bedtime was before or after midnight.
-  const midCycle = new Date(Date.parse(cycle.start) + 12 * HOUR_MS).toISOString();
-  return localDay(midCycle, cycle.timezone_offset);
+export function cycleDate(
+  cycle: { start: string; timezone_offset: string },
+  sleep: { end: string; timezone_offset: string } | undefined
+): string {
+  return sleep ? localDay(sleep.end, sleep.timezone_offset) : cycleCoveredDay(cycle);
 }
 
 /**

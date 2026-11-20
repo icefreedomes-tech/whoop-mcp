@@ -11,6 +11,7 @@ import type { Recovery, Sleep, Cycle } from "../api/types.js";
 import { ENDPOINT_RECOVERY, ENDPOINT_SLEEP, ENDPOINT_CYCLE } from "../api/endpoints.js";
 import { fetchAllPages } from "../api/pagination.js";
 import { resolveDateExpression } from "./date-utils.js";
+import { cycleCoveredDay } from "./daily-rows.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,12 +24,15 @@ export interface CalendarDay {
   sleep_hours: number | null;
   sleep_performance_pct: number | null;
   day_strain: number | null;
+  /** Steps in the cycle covering this day. Null when WHOOP reports none. */
+  steps: number | null;
 }
 
 export interface CalendarAverages {
   recovery: number | null;
   sleep_hours: number | null;
   strain: number | null;
+  steps: number | null;
 }
 
 export interface CalendarGrid {
@@ -136,15 +140,17 @@ export async function getCalendar(
     return {
       period: { start: formatDateUTC(gridStart), end: formatDateUTC(gridStart), days: 0 },
       days: [],
-      averages: { recovery: null, sleep_hours: null, strain: null },
+      averages: { recovery: null, sleep_hours: null, strain: null, steps: null },
     };
   }
 
   const gridLength =
     Math.round((gridEnd.getTime() - gridStart.getTime()) / (24 * MILLI_PER_HOUR)) + 1;
 
+  // One day earlier than the grid: the cycle and sleep covering the first day
+  // begin at bedtime the evening before.
   const startISO = new Date(
-    Date.UTC(gridStart.getUTCFullYear(), gridStart.getUTCMonth(), gridStart.getUTCDate())
+    Date.UTC(gridStart.getUTCFullYear(), gridStart.getUTCMonth(), gridStart.getUTCDate() - 1)
   ).toISOString();
   const endISO = new Date(
     Date.UTC(gridEnd.getUTCFullYear(), gridEnd.getUTCMonth(), gridEnd.getUTCDate(), 23, 59, 59, 999)
@@ -195,7 +201,8 @@ export async function getCalendar(
   // Index cycle by date (use start date)
   const cycleByDate = new Map<string, Cycle>();
   for (const c of cycleResult.records) {
-    const date = dateFromTimestamp(c.start);
+    // A cycle starts at bedtime, often the evening before the day it covers.
+    const date = cycleCoveredDay(c);
     cycleByDate.set(date, c);
   }
 
@@ -225,6 +232,7 @@ export async function getCalendar(
         : null,
       sleep_performance_pct: sleep?.score?.sleep_performance_percentage ?? null,
       day_strain: cycle?.score?.strain ?? null,
+      steps: cycle?.step_count ?? null,
     });
   }
 
@@ -232,6 +240,7 @@ export async function getCalendar(
   const recoveryScores = days.map((d) => d.recovery_score).filter((v): v is number => v !== null);
   const sleepHours = days.map((d) => d.sleep_hours).filter((v): v is number => v !== null);
   const strains = days.map((d) => d.day_strain).filter((v): v is number => v !== null);
+  const steps = days.map((d) => d.steps).filter((v): v is number => v !== null);
 
   return {
     period: {
@@ -244,6 +253,7 @@ export async function getCalendar(
       recovery: average(recoveryScores),
       sleep_hours: average(sleepHours),
       strain: average(strains),
+      steps: average(steps),
     },
   };
 }

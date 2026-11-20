@@ -247,6 +247,45 @@ describe("getCalendar", () => {
     expect(result.days[1].day_strain).toBe(12.1);
   });
 
+  // Regression: cycles were keyed by the UTC date they started. A cycle opens at
+  // bedtime, so with a 22:00 bedtime at +01:00 it started on the previous date
+  // and every day's strain landed one row too early, beside the wrong sleep and
+  // recovery. Seen live on 2026-11-20: the row for the 19th showed the 20th's
+  // strain (5.3) and the 19th's own (15.4) sat on the 18th.
+  it("puts an evening-start cycle on the day you woke up, with its steps", async () => {
+    const eveningCycle = (
+      start: string,
+      end: string | null,
+      strain: number,
+      steps: number
+    ): Cycle => ({
+      ...makeCycle("2026-03-14", strain),
+      start,
+      end,
+      timezone_offset: "+01:00",
+      step_count: steps,
+    });
+    const client = createMockClient({
+      "/v2/recovery": { records: recoveries, next_token: null },
+      "/v2/activity/sleep": { records: sleeps, next_token: null },
+      "/v2/cycle": {
+        records: [
+          eveningCycle("2026-03-14T21:00:00.000Z", null, 5.3, 4425),
+          eveningCycle("2026-03-13T21:00:00.000Z", "2026-03-14T21:00:00.000Z", 15.4, 20896),
+        ],
+        next_token: null,
+      },
+    });
+
+    const result = await getCalendar(client, { days: 2 });
+
+    expect(result.days.map((day) => [day.date, day.day_strain, day.steps])).toEqual([
+      ["2026-03-15", 5.3, 4425],
+      ["2026-03-14", 15.4, 20896],
+    ]);
+    expect(result.averages.steps).toBe(12660.5);
+  });
+
   it("computes averages from non-null values", async () => {
     const client = createMockClient({
       "/v2/recovery": { records: recoveries, next_token: undefined },

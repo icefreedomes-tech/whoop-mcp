@@ -484,7 +484,7 @@ export function createWhoopServer(client: WhoopClient, options?: CreateServerOpt
     "get_calendar",
     {
       description:
-        "Get a day-by-day grid of recovery, sleep, and strain for a date range. Perfect for weekly/monthly overviews.",
+        "Get a day-by-day grid of recovery, sleep, strain and steps for a date range. Perfect for weekly/monthly overviews. For every daily metric with personal norms, use get_daily_metrics.",
       inputSchema: z.object({
         days: z
           .number()
