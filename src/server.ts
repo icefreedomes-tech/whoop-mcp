@@ -31,6 +31,7 @@ import type { Logger } from "./logging/logger.js";
 import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { getBaselines, baselinesInputSchema } from "./tools/get-baselines.js";
 import { getSleepDebt, sleepDebtInputSchema } from "./tools/get-sleep-debt.js";
+import { getDailyMetrics, dailyMetricsInputSchema } from "./tools/get-daily-metrics.js";
 import {
   outputSchemas,
   aggregateOutputSchemas,
@@ -526,6 +527,16 @@ export function createWhoopServer(client: WhoopClient, options?: CreateServerOpt
       annotations: { readOnlyHint: true },
     },
     async (args) => safeTool(() => getSleepDebt(client, args))
+  );
+  registerTool(
+    "get_daily_metrics",
+    {
+      description:
+        "Every daily WHOOP metric in one table, one row per day: recovery (score, HRV, resting HR, SpO2, skin temperature), sleep (stages, need, performance, efficiency, consistency, respiratory rate, cycles, disturbances), naps, day strain, energy in kJ and kcal, heart rate, steps and workouts. Each row is a WHOOP cycle labelled with the local day you woke up, and each metric is flagged high or low against your own previous 30 days. Use it for any per-day question, comparison, chart or export.",
+      inputSchema: dailyMetricsInputSchema,
+      annotations: { readOnlyHint: true },
+    },
+    async (args) => safeTool(() => getDailyMetrics(client, args))
   );
 
   if (!options?.disableResources && privacyMode === "standard") {

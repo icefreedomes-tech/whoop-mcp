@@ -8,6 +8,7 @@ import {
 import { dataQualitySchema, periodSchema } from "./analytics-utils.js";
 import { baselinesOutputSchema } from "./get-baselines.js";
 import { sleepDebtOutputSchema } from "./get-sleep-debt.js";
+import { dailyMetricsOutputSchema } from "./get-daily-metrics.js";
 
 export { privacyModeSchema, type PrivacyMode } from "../privacy.js";
 const number = z.number().finite();
@@ -152,6 +153,7 @@ export const outputSchemas: Record<string, z.ZodObject> = {
   get_calendar: calendar,
   get_baselines: baselinesOutputSchema,
   get_sleep_debt: sleepDebtOutputSchema,
+  get_daily_metrics: dailyMetricsOutputSchema,
 };
 
 const aggregateBand = z.object({

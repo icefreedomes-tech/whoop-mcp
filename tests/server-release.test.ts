@@ -26,9 +26,9 @@ describe("release MCP contracts", () => {
   it("advertises output schemas and returns equivalent structured/text results", async () => {
     await connected(false, async (client) => {
       const { tools } = await client.listTools();
-      expect(tools).toHaveLength(16);
+      expect(tools).toHaveLength(17);
       expect(tools.every((tool) => tool.outputSchema?.type === "object")).toBe(true);
-      for (const name of ["get_baselines", "get_sleep_debt", "get_today"]) {
+      for (const name of ["get_baselines", "get_sleep_debt", "get_today", "get_daily_metrics"]) {
         const result = await client.callTool({ name, arguments: {} });
         expect(result.isError).not.toBe(true);
         const content = result.content as Array<{ type: string; text: string }>;
