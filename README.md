@@ -20,7 +20,7 @@ An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that 
 > structured results, aggregate privacy and local diagnostics. See the
 > [changelog](CHANGELOG.md#070---2026-09-10) and [release checklist](docs/plans/task-17-v070-trustworthy-personal-analytics.md).
 
-- 🏋️ **16 health data tools** — recovery, sleep, workouts, cycles, body measurements, profile, summaries, trends, comparisons, record lookups, today's snapshot, calendar, personal baselines, and sleep debt
+- 🏋️ **17 health data tools:** recovery, sleep, workouts, cycles with steps, body measurements, profile, summaries, trends, comparisons, record lookups, today's snapshot, calendar, personal baselines, sleep debt, and a daily table of every metric with personal norms
 - 📊 **4 MCP Resources** — ambient health context (latest recovery, sleep, cycle, profile) available without explicit tool calls
 - 💬 **5 MCP Prompts** — guided conversation starters for common health queries
 - 📅 **Rich natural date expressions** — use "last 7 days", "this week", "last 2 weeks", "last 3 months", "this quarter", "last year", "2026-05", and more
@@ -539,7 +539,7 @@ fields and exact activity timestamps are omitted. Period bounds are date-only.
 Raw resources and all five existing prompts are unavailable in this mode because
 their workflows require raw tools/resources. Tool arguments cannot override the policy.
 
-The default is `standard`, retaining all 16 tools, four resources and five prompts.
+The default is `standard`, retaining all 17 tools, four resources and five prompts.
 The standard-mode resource and prompt lists later in this README do not apply to
 aggregate mode. To enable aggregation in a client configuration, add
 `"WHOOP_MCP_PRIVACY_MODE": "aggregate"` to the server's existing `env` object.

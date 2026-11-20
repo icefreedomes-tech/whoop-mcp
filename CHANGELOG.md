@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WHOOP_REDIRECT_URI` is now honoured, and `CALLBACK_HOST` / `CALLBACK_TIMEOUT_MS` configure the first-run OAuth callback, so authorization can complete behind a cloud proxy.
 - A broken output contract names the mismatched fields — paths and type messages only, never values — instead of a bare "did not match" error.
 - Warnings are logged for every rejected `/mcp` request from an authenticated client (status, JSON-RPC method, session and protocol-version metadata) and for every tool call that ends in an error (tool name and error text). Params, results and health values are never logged.
+- `get_daily_metrics`: one row per day with every daily metric WHOOP exposes (recovery with HRV, resting HR, SpO2 and skin temperature; sleep stages, need, performance, efficiency, consistency and respiratory rate; naps; day strain; energy in kJ and kcal; heart rate; steps; workouts). Each metric is flagged high or low against mean ± 2 SD of your previous 30 days.
+- Steps: the cycle's `step_count` (added by WHOOP on 2026-09-23) is validated, shown in `get_today` and `get_calendar`, and available to `get_trend`.
+- `get_trend` covers SpO2, skin temperature, respiratory rate and steps.
 
 ### Changed
 - **Breaking (library use):** `createHttpServer` requires a `createMcpServer` factory, and `HttpServerResult.transport` is replaced by `sessionCount()`.
@@ -29,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tool-failure log entries keep their reason under `error`; Railway drops a JSON `message` key from log attributes.
 - Requests that hit 401 together share one token refresh, and a request whose 401 arrives after another request already refreshed retries with the new token. WHOOP refresh tokens are single use, so `get_today`'s four parallel requests raced four refreshes on the first call after the hourly expiry: the losers came back `fetch_failed`, and a lost race could burn the stored refresh token. Failed refreshes are now logged.
 - Undocumented fields inside score objects (recovery, sleep with its stage summary and sleep need, cycle, workout with its zone durations) are passed through instead of silently stripped.
+- `get_today` finds the current cycle as the one open now. It required a cycle that started on today's local date, but a cycle opens at bedtime, so with a bedtime before midnight it reported the cycle stale and recovery missing while both were available.
+- `get_calendar` puts each cycle's strain on the day you woke up. It keyed cycles by the UTC date they started, so with a bedtime before midnight every day's strain sat one row early, beside the wrong sleep and recovery.
+- `get_trend` orders points by date before fitting. WHOOP returns collections newest first, so every slope ran backwards and a confident rise read as declining.
+- `get_trend` direction follows each metric's polarity: a rising resting heart rate or respiratory rate is declining, and strain and skin temperature read rising or falling.
 
 ## [0.7.0] - 2026-09-10
 
