@@ -183,9 +183,12 @@ describe("getToday", () => {
     },
     { label: "mismatched cycle", recovery: { ...mockRecovery, cycle_id: 999 }, cycle: mockCycle },
     {
+      // A cycle that has already closed is no longer current. (An open cycle
+      // is current however long ago it started: WHOOP opens a new one only at
+      // the next sleep, so its start day says nothing about staleness.)
       label: "stale cycle",
       recovery: mockRecovery,
-      cycle: { ...mockCycle, start: "2026-03-13T06:00:00Z" },
+      cycle: { ...mockCycle, start: "2026-03-13T06:00:00Z", end: "2026-03-14T06:00:00Z" },
     },
   ])("suppresses recovery for $label", async ({ recovery, cycle }) => {
     const result = await getToday(
@@ -222,6 +225,51 @@ describe("getToday", () => {
       cache_status: "unknown",
     });
     expect(result.strain?.last_workout).toMatchObject({ occurred_at: mockWorkout.start });
+  });
+
+  // Regression: a WHOOP cycle opens when you fall asleep, so it normally starts
+  // the previous evening in local time. get_today matched the cycle by its local
+  // start day, found none, and reported cycle "stale" and recovery "missing"
+  // while both were available. It only ever worked when bedtime fell after local
+  // midnight.
+  it("uses the open cycle that began yesterday evening in local time", async () => {
+    const eveningCycle: Cycle = {
+      ...mockCycle,
+      start: "2026-03-14T22:00:00.000Z", // 17:00 local on the 14th
+      end: null,
+    };
+    const client = createMockClient({
+      "/v2/recovery": { records: [mockRecovery], next_token: null },
+      "/v2/activity/sleep": { records: [mockSleep], next_token: null },
+      "/v2/cycle": { records: [eveningCycle], next_token: null },
+      "/v2/activity/workout": { records: [mockWorkout], next_token: null },
+    });
+
+    const result = await getToday(client);
+
+    expect(result.data_quality.sources.cycle?.status).toBe("available");
+    expect(result.data_quality.sources.recovery?.status).toBe("available");
+    expect(result.recovery?.score).toBe(72);
+    expect(result.strain?.day_strain).toBe(8.4);
+  });
+
+  it("reports a cycle that already closed before now as stale", async () => {
+    const closedCycle: Cycle = {
+      ...mockCycle,
+      start: "2026-03-14T22:00:00.000Z",
+      end: "2026-03-15T09:00:00.000Z", // ended three hours before now
+    };
+    const client = createMockClient({
+      "/v2/recovery": { records: [mockRecovery], next_token: null },
+      "/v2/activity/sleep": { records: [mockSleep], next_token: null },
+      "/v2/cycle": { records: [closedCycle], next_token: null },
+      "/v2/activity/workout": { records: [mockWorkout], next_token: null },
+    });
+
+    const result = await getToday(client);
+
+    expect(result.data_quality.sources.cycle?.status).toBe("stale");
+    expect(result.strain).toBeNull();
   });
 
   it("uses the recorded offset near local midnight", async () => {

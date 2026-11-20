@@ -198,10 +198,12 @@ export async function getToday(
   )
     .filter((record) => Date.parse(record.start) <= now.getTime())
     .sort((left, right) => Date.parse(right.start) - Date.parse(left.start));
+  // A cycle opens when you fall asleep and runs until the next one starts, so
+  // the current cycle normally began the previous evening in local time. Match
+  // the cycle covering now, not one whose local start day equals today.
   const cycleCandidate = cycles.find(
     (record) =>
-      localDay(record.start, record.timezone_offset) ===
-      localDay(now.toISOString(), record.timezone_offset)
+      record.end === null || record.end === undefined || Date.parse(record.end) > now.getTime()
   );
   const cycle = parseRecords(
     cycleCandidate ? [cycleCandidate] : [],
