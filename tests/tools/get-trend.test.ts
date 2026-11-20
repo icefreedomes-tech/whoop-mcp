@@ -233,6 +233,28 @@ describe("getTrend", () => {
     expect(result.trend.confidence).toBe("high");
   });
 
+  // Regression: WHOOP returns collections newest first, and the regression read
+  // array position as time, so every slope was reversed: a real rise reported
+  // as declining. Live on 2026-11-20 the recovery values came back as
+  // [33, 35, 39, ...] with 33 being that morning's.
+  it("orders points by date before fitting, since WHOOP returns newest first", async () => {
+    const newestFirst = [100, 90, 80, 70, 60, 50].map((score, index) =>
+      makeRecovery({
+        recovery_score: score,
+        hrv: 55,
+        rhr: 52,
+        date: `2026-05-0${6 - index}T06:00:00.000Z`,
+      })
+    );
+    getMock.mockResolvedValueOnce(paginated(newestFirst));
+
+    const result = await getTrend(client, { metric: "recovery" });
+
+    expect(result.values).toEqual([50, 60, 70, 80, 90, 100]);
+    expect(result.trend.slope).toBeGreaterThan(0);
+    expect(result.trend.direction).toBe("improving");
+  });
+
   it("returns declining trend for decreasing values", async () => {
     const recoveries = [100, 90, 80, 70, 60, 50].map((s) =>
       makeRecovery({ recovery_score: s, hrv: 55, rhr: 52 })

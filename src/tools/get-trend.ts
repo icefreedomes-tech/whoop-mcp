@@ -207,8 +207,14 @@ export async function getTrend(
     interPageDelayMs: 0,
   });
 
-  // Extract values and dates
-  const { values, dates } = config.extract(result.records);
+  // WHOOP returns collections newest first, and the regression reads array
+  // position as time, so put the points in chronological order first.
+  const extracted = config.extract(result.records);
+  const points = extracted.values
+    .map((value, index) => ({ value, date: extracted.dates[index] ?? "" }))
+    .sort((left, right) => Date.parse(left.date) - Date.parse(right.date));
+  const values = points.map((point) => point.value);
+  const dates = points.map((point) => point.date);
 
   if (values.length < 2) {
     throw new Error(
