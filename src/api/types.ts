@@ -142,6 +142,8 @@ export interface Cycle {
   timezone_offset: string;
   score_state: ScoreState;
   score?: CycleScore | null;
+  /** Steps taken during the cycle. Null when WHOOP has no step data. */
+  step_count?: number | null;
 }
 
 /** GET /v2/cycle — paginated */

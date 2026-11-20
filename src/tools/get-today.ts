@@ -74,6 +74,8 @@ export interface TodayLastWorkout {
 export interface TodayStrain {
   day_strain: number;
   energy_burned_kj: number;
+  /** Steps in the current cycle. Null when WHOOP reports none. */
+  steps: number | null;
   last_workout: TodayLastWorkout | null;
 }
 
@@ -338,6 +340,7 @@ export async function getToday(
       strain = {
         day_strain: record.score.strain,
         energy_burned_kj: record.score.kilojoule,
+        steps: record.step_count ?? null,
         last_workout: lastWorkout,
       };
     }

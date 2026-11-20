@@ -272,6 +272,24 @@ describe("getToday", () => {
     expect(result.strain).toBeNull();
   });
 
+  // WHOOP added step_count to the cycle on 2026-09-23, under the existing
+  // read:cycles scope. It is null when the cycle has no step data.
+  it("reports the cycle's step count, and null when WHOOP sends none", async () => {
+    async function stepsFor(cycle: Cycle): Promise<number | null> {
+      const client = createMockClient({
+        "/v2/recovery": { records: [mockRecovery], next_token: null },
+        "/v2/activity/sleep": { records: [mockSleep], next_token: null },
+        "/v2/cycle": { records: [cycle], next_token: null },
+        "/v2/activity/workout": { records: [mockWorkout], next_token: null },
+      });
+      return (await getToday(client)).strain?.steps ?? null;
+    }
+
+    expect(await stepsFor({ ...mockCycle, step_count: 4322 })).toBe(4322);
+    expect(await stepsFor({ ...mockCycle, step_count: null })).toBeNull();
+    expect(await stepsFor(mockCycle)).toBeNull();
+  });
+
   it("uses the recorded offset near local midnight", async () => {
     vi.setSystemTime(new Date("2026-03-16T01:00:00Z"));
     const result = await getToday(

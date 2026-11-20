@@ -102,6 +102,7 @@ const today = z.object({
     .object({
       day_strain: number,
       energy_burned_kj: number,
+      steps: nullable,
       last_workout: z
         .object({
           sport_name: z.string(),

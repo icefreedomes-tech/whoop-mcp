@@ -89,6 +89,8 @@ export const cycleRecordSchema = z
       })
       .passthrough()
       .nullish(),
+    // Added by WHOOP on 2026-09-23 under the existing read:cycles scope.
+    step_count: z.number().int().nonnegative().nullish(),
   })
   .passthrough();
 
